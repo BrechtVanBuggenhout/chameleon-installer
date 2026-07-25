@@ -41,6 +41,33 @@ log "Preflight checks"
 command -v gcloud >/dev/null 2>&1 || fail "gcloud CLI not found. Install: https://cloud.google.com/sdk/docs/install"
 command -v terraform >/dev/null 2>&1 || fail "terraform not found. Install: https://developer.hashicorp.com/terraform/install"
 
+# Not a hard failure -- this repo has no write access for anyone but
+# Chameleon anyway, so nothing here can actually leak into Chameleon's
+# repo. This is purely to save you from a confusing dead end: if you plan
+# to customize this Terraform for your own product, you'll want your own
+# git history to commit to, which a plain clone of Chameleon's repo can't
+# give you.
+if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  ORIGIN_URL="$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || echo "")"
+  if echo "${ORIGIN_URL}" | grep -qE "github\.com[:/]BrechtVanBuggenhout/chameleon-installer(\.git)?/?$"; then
+    cat <<'EOF'
+
+  This is a clone of Chameleon's own chameleon-installer repo, not your
+  own fork. That's fine to evaluate Chameleon as-is, but if you plan to
+  customize this Terraform for your own product: fork it on GitHub first
+  (top-right "Fork" button at
+  https://github.com/BrechtVanBuggenhout/chameleon-installer), then clone
+  YOUR fork instead. Keep Chameleon's repo as an "upstream" remote to pull
+  future updates without losing your changes:
+    git remote add upstream https://github.com/BrechtVanBuggenhout/chameleon-installer.git
+    git fetch upstream && git merge upstream/main
+
+  Continuing in 5s (Ctrl+C to stop and fork first)...
+EOF
+    sleep 5
+  fi
+fi
+
 TF_VERSION="$(terraform version -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["terraform_version"])' 2>/dev/null || echo "0.0.0")"
 python3 - "$TF_VERSION" <<'PYEOF' || fail "Terraform >= 1.9 required (cross-variable validation); found ${TF_VERSION}"
 import sys

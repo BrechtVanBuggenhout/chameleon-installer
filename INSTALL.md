@@ -37,6 +37,26 @@ database, its own BigQuery dataset, its own Cloud Run services.
 
 ## Install
 
+**Fork this repo first if you plan to customize any of this Terraform for
+your own product** (add resources, change configs, whatever fits what
+you're building) — use the "Fork" button at the top of
+[this repo on GitHub](https://github.com/BrechtVanBuggenhout/chameleon-installer),
+then clone *your* fork below instead of Chameleon's repo directly. A fork
+is your own separate repository: you can commit and push your changes to
+it freely, and nothing you do there ever touches Chameleon's copy (GitHub
+enforces that at the permission level — you don't have write access to
+Chameleon's repo, full stop). Keep Chameleon's repo as an `upstream`
+remote if you want to pull future updates without losing your changes:
+
+```bash
+git remote add upstream https://github.com/BrechtVanBuggenhout/chameleon-installer.git
+git fetch upstream && git merge upstream/main
+```
+
+If you're just evaluating Chameleon as-is with no plans to customize it,
+a plain clone is fine — `bootstrap.sh` will print a reminder about this
+either way.
+
 ```bash
 cp terraform.tfvars.byoc.example terraform.tfvars
 # edit terraform.tfvars — at minimum, set bigquery_rls_admin_email
