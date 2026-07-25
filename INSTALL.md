@@ -77,6 +77,31 @@ The script creates the Terraform state bucket, enables required GCP APIs,
 then runs `terraform init` + `terraform apply`. On success it prints your
 console URL and a generated password.
 
+## Optional: build your own images instead of Chameleon's
+
+By default, `key_vault_container_image`, `pii_ingestor_worker_container_image`,
+and `console_image` point at Chameleon's own pre-built images (prerequisite
+4 above grants your service accounts read access to pull them). That's the
+simplest path and what most customers want.
+
+If you'd rather not depend on Chameleon's container registry staying up
+indefinitely, all three services' source is public and buildable yourself:
+
+```bash
+./scripts/build-own-images.sh <gcp_project_id> [region]
+```
+
+This builds all three images (from
+[chameleon-vault](https://github.com/BrechtVanBuggenhout/chameleon-vault),
+[chameleon-pii-ingestor](https://github.com/BrechtVanBuggenhout/chameleon-pii-ingestor),
+and [chameleon-console](https://github.com/BrechtVanBuggenhout/chameleon-console))
+straight from their GitHub URLs — no local clone needed — and pushes them
+to an Artifact Registry repo in your own project, creating it if it
+doesn't exist yet. Set the three `*_container_image`/`console_image`
+values it prints to the resulting URIs in your `terraform.tfvars` before
+running `bootstrap.sh`. Requires `docker` in addition to the prerequisites
+above.
+
 ## If you're on Snowflake instead of BigQuery
 
 Chameleon's core control plane (encryption keys, the deletion state machine,
