@@ -1,0 +1,99 @@
+# Copy to terraform.tfvars and fill in the values marked REQUIRED.
+# Do not commit terraform.tfvars to version control.
+#
+# gcp_project_id, gcp_region, and environment are passed on the command line
+# by bootstrap.sh (see INSTALL.md) rather than set here, so the same file
+# works whether you're deploying to a dev-tier or prod-tier instance.
+
+# REQUIRED — email of the principal granted admin access under BigQuery
+# row-level security (typically your own Google account).
+bigquery_rls_admin_email = "you@example.com"
+
+# REQUIRED — GCS landing zone bucket name. Must be globally unique across
+# ALL of GCP, not just your project — embedding your project id (as below)
+# is the easiest way to guarantee that.
+gcs_bucket_name = "chameleon-landing-YOUR_PROJECT_ID"
+
+firestore_region   = "us-central1"
+bigquery_dataset_id = "chameleon"
+bigquery_location   = "US"
+
+gcs_storage_class = "STANDARD"
+
+audit_log_retention_days = 2555
+audit_log_retention_lock = false
+
+# Pin these to a real released version once Chameleon has granted your
+# project's runtime service accounts reader access to its image registries
+# (part of onboarding — see INSTALL.md). Placeholders let a first apply
+# succeed before that.
+key_vault_container_image           = "us-docker.pkg.dev/cloudrun/container/hello"
+pii_ingestor_worker_container_image = "us-docker.pkg.dev/cloudrun/container/hello"
+console_image                       = "us-docker.pkg.dev/cloudrun/container/hello"
+
+key_vault_artifact_repository_id = "key-vault"
+key_vault_firestore_collection   = "key_registry"
+key_vault_log_level              = "info"
+
+# Open ingress + public invoker so the console (a separate Cloud Run service,
+# same project) can reach Key Vault. Authentication is enforced IN THE APP via
+# the VAULT_API_KEY shared secret (vault-api-key-<instance> in Secret Manager)
+# — mirrors Chameleon's own dev/prod. Without these, Key Vault defaults to
+# INTERNAL_ONLY + IAM-invoker-required, which blocks the console entirely
+# (Cloud Run IAM invoker checks require a Google ID token, not the app-level
+# bearer token the console sends — a real but separate hardening item; see
+# TERRAFORM_SETUP.md/console.tf for the tradeoff notes).
+key_vault_cloud_run_ingress     = "INGRESS_TRAFFIC_ALL"
+key_vault_allow_unauthenticated = true
+
+# REQUIRED for the ingest→delete→certificate loop (see INSTALL.md) — off by
+# default to keep a minimal footprint for customers who only need Key Vault
+# + console.
+enable_pii_ingestor_worker = true
+
+# BYOC/managed-dedicated deployments don't run Chameleon's own CI — they
+# consume pre-built images (see key_vault_container_image etc. above).
+enable_workload_identity_federation        = false
+enable_terraform_github_actions_identities = false
+# Required by Terraform even with WIF disabled above (no default -- it used
+# to silently default to Chameleon's own GitHub account, which would have
+# granted Chameleon's CI trust on your project had you ever flipped
+# enable_workload_identity_federation to true without overriding this).
+# Only meaningful if you do enable WIF for your own CI; set it to your
+# GitHub org/user in that case.
+github_repository_owner = "your-github-org-or-username"
+
+# Only relevant if you enable warehouse discovery (WAREHOUSE_DISCOVERY_DATASETS
+# in the data-pipelines service) — leave commented out otherwise.
+# warehouse_discovery_dataset_ids = ["your_dataset"]
+
+# Only relevant if the chameleon_pii dbt package builds its registry/lineage
+# tables into Snowflake instead of (or in addition to) BigQuery. Leave
+# commented out to keep Key Vault reading BigQuery only. The password is set
+# separately via `gcloud secrets versions add pii-registry-snowflake-password-<instance> --data-file=-`,
+# never through tfvars.
+# pii_registry_snowflake_account   = "XY12345-AB67890"
+# pii_registry_snowflake_user      = "your_user"
+# pii_registry_snowflake_role      = "your_role"
+# pii_registry_snowflake_warehouse = "your_warehouse"
+# pii_registry_snowflake_database  = "your_database"
+# pii_registry_snowflake_schema    = "your_schema"
+
+# Only relevant if the PII Ingestor Worker should land data in Snowflake
+# instead of BigQuery. Leave commented out (pii_warehouse_type defaults to
+# "bigquery") for no change in behavior. See INSTALL.md's "If you're on
+# Snowflake instead of BigQuery" section. The password is set separately via
+# `gcloud secrets versions add pii-ingestor-snowflake-password-<instance> --data-file=-`,
+# never through tfvars.
+# pii_warehouse_type               = "snowflake"
+# pii_ingestor_snowflake_account   = "XY12345-AB67890"
+# pii_ingestor_snowflake_user      = "your_user"
+# pii_ingestor_snowflake_role      = "your_role"
+# pii_ingestor_snowflake_warehouse = "your_warehouse"
+# pii_ingestor_snowflake_database  = "your_database"
+# pii_ingestor_snowflake_schema    = "your_schema"
+
+labels = {
+  managed_by = "terraform"
+  project    = "chameleon"
+}
