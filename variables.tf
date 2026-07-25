@@ -223,8 +223,14 @@ variable "audit_log_retention_lock" {
 
 # Workload Identity Federation Configuration
 variable "github_repository_owner" {
-  description = "GitHub repository owner (organization or user) trusted by the WIF pool's attribute_condition. Required -- no default, since the previous hardcoded value was Chameleon's own GitHub account. Only relevant when enable_workload_identity_federation is true."
+  description = "GitHub repository owner (organization or user) trusted by the WIF pool's attribute_condition. Required only when enable_workload_identity_federation is true -- empty string is fine (and the default) otherwise. A previous version of this variable defaulted to Chameleon's own GitHub account unconditionally, which would have silently granted Chameleon's CI trust on your project had you ever enabled WIF without overriding it; a later attempt to fix that by dropping the default entirely broke every BYOC signup, since the generated tfvars always sets enable_workload_identity_federation = false but Terraform still requires a value for any variable with no default regardless of which resources actually consume it."
   type        = string
+  default     = ""
+
+  validation {
+    condition     = var.enable_workload_identity_federation == false || length(var.github_repository_owner) > 0
+    error_message = "github_repository_owner is required when enable_workload_identity_federation is true."
+  }
 }
 
 variable "github_repository_name" {

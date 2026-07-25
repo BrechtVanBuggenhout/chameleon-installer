@@ -55,13 +55,9 @@ enable_pii_ingestor_worker = true
 # consume pre-built images (see key_vault_container_image etc. above).
 enable_workload_identity_federation        = false
 enable_terraform_github_actions_identities = false
-# Required by Terraform even with WIF disabled above (no default -- it used
-# to silently default to Chameleon's own GitHub account, which would have
-# granted Chameleon's CI trust on your project had you ever flipped
-# enable_workload_identity_federation to true without overriding this).
-# Only meaningful if you do enable WIF for your own CI; set it to your
-# GitHub org/user in that case.
-github_repository_owner = "your-github-org-or-username"
+# Only needed if you flip enable_workload_identity_federation to true for
+# your own CI -- set it to your GitHub org/user in that case.
+# github_repository_owner = "your-github-org-or-username"
 
 # Only relevant if you enable warehouse discovery (WAREHOUSE_DISCOVERY_DATASETS
 # in the data-pipelines service) — leave commented out otherwise.
