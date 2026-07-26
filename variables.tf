@@ -72,6 +72,12 @@ variable "firestore_region" {
   default     = "us-central1"
 }
 
+variable "firestore_database_id" {
+  description = "Firestore database name/ID for the KMS key registry backend. Defaults to \"(default)\" for backward compatibility with Chameleon's own existing dev/prod deployments, which already use the project's actual default database. Override this for any BYOC deployment into a GCP project that might already have a \"(default)\" Firestore database from something unrelated to Chameleon -- common, since App Engine, Firebase, and prior Firestore usage all auto-provision it. GCP rejects creating a second \"(default)\" database with a 409 (\"please use another database_id\"); any other name works as a real, independent database."
+  type        = string
+  default     = "(default)"
+}
+
 variable "enable_firestore_cmek" {
   description = "Enable CMEK on Firestore database creation. Existing non-CMEK Firestore databases cannot be converted in place."
   type        = bool

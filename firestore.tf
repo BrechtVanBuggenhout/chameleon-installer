@@ -3,7 +3,7 @@
 # For production, migrate to Cloud SQL (PostgreSQL) for ACID guarantees and audit trails.
 resource "google_firestore_database" "kms_registry" {
   project     = var.gcp_project_id
-  name        = "(default)"
+  name        = var.firestore_database_id
   location_id = var.firestore_region
   type        = "FIRESTORE_NATIVE"
 

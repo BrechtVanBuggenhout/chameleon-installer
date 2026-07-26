@@ -18,6 +18,13 @@ firestore_region   = "us-central1"
 bigquery_dataset_id = "chameleon"
 bigquery_location   = "US"
 
+# Only needed if your GCP project already has a "(default)" Firestore
+# database from something unrelated to Chameleon (common -- App Engine,
+# Firebase, and prior Firestore usage all auto-provision it). Terraform
+# will fail with a 409 ("please use another database_id") if so; set
+# this to any other name and it creates a real, independent database.
+# firestore_database_id = "chameleon-YOUR_INSTANCE_NAME"
+
 gcs_storage_class = "STANDARD"
 
 audit_log_retention_days = 2555
