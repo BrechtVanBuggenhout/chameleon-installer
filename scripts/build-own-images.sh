@@ -57,7 +57,13 @@ for entry in $SERVICES; do
   image="${REGISTRY}/${name}:latest"
 
   log "Building ${name} from ${url}"
-  docker build -t "$image" "$url"
+  # Cloud Run only runs linux/amd64. Without --platform, docker build
+  # defaults to the host's own architecture -- on Apple Silicon (or any
+  # ARM host) that silently produces an arm64 image that fails at
+  # startup with "exec format error" once deployed, since there's
+  # nothing in a plain `docker build` to catch an architecture mismatch
+  # ahead of time.
+  docker build --platform=linux/amd64 -t "$image" "$url"
 
   log "Pushing ${name}"
   docker push "$image"
