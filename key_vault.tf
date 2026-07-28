@@ -435,6 +435,17 @@ resource "google_project_iam_member" "key_vault_bigquery_job_user" {
   member  = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# IAM: Key Vault can read table/column schema (INFORMATION_SCHEMA) across the
+# whole project, for the Declare form's live column picker. Project-scoped
+# because a declared resource can live in any dataset, not just Chameleon's
+# own. metadataViewer, deliberately not dataViewer -- this only needs to see
+# column names/types, never read actual row data.
+resource "google_project_iam_member" "key_vault_bigquery_metadata_viewer" {
+  project = var.gcp_project_id
+  role    = "roles/bigquery.metadataViewer"
+  member  = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # IAM: Key Vault writes application logs to Cloud Logging.
 resource "google_project_iam_member" "key_vault_logging" {
   project = var.gcp_project_id

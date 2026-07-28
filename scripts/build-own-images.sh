@@ -45,25 +45,40 @@ log "Configuring Docker auth"
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
 # ---------------------------------------------------------------------------
-# Docker can build directly from a public git repo URL as the build
-# context -- no local clone needed. name:url pairs, space-separated
-# (avoiding bash 4+ associative arrays for portability to macOS's
-# default bash 3.2).
+# name:url pairs, space-separated (avoiding bash 4+ associative arrays for
+# portability to macOS's default bash 3.2).
 SERVICES="key-vault:https://github.com/BrechtVanBuggenhout/chameleon-vault.git pii-ingestor:https://github.com/BrechtVanBuggenhout/chameleon-pii-ingestor.git console:https://github.com/BrechtVanBuggenhout/chameleon-console.git"
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
 
 for entry in $SERVICES; do
   name="${entry%%:*}"
   url="${entry#*:}"
   image="${REGISTRY}/${name}:latest"
+  clone_dir="${WORKDIR}/${name}"
 
-  log "Building ${name} from ${url}"
+  log "Cloning ${name} from ${url}"
+  # A real local clone, not `docker build <git-url>` directly -- that form
+  # builds straight from a remote git URL as the context, and in practice
+  # Docker's fetch of that context isn't reliably busted by re-running this
+  # script (even with --no-cache, which only covers the Dockerfile's own
+  # instruction cache, not the upstream context fetch). A real customer hit
+  # this: rebuilding to pick up a fix silently produced a byte-identical,
+  # stale image. Cloning fresh into a real directory removes the ambiguity
+  # entirely -- the build context is exactly whatever's on disk right now.
+  git clone --depth 1 "$url" "$clone_dir"
+  echo "  building from: $(git -C "$clone_dir" log -1 --oneline)"
+
+  log "Building ${name}"
   # Cloud Run only runs linux/amd64. Without --platform, docker build
   # defaults to the host's own architecture -- on Apple Silicon (or any
   # ARM host) that silently produces an arm64 image that fails at
   # startup with "exec format error" once deployed, since there's
   # nothing in a plain `docker build` to catch an architecture mismatch
-  # ahead of time.
-  docker build --platform=linux/amd64 -t "$image" "$url"
+  # ahead of time. --no-cache guards against a stale Dockerfile-layer
+  # rebuild on a machine that's run this script before.
+  docker build --no-cache --platform=linux/amd64 -t "$image" "$clone_dir"
 
   log "Pushing ${name}"
   docker push "$image"
