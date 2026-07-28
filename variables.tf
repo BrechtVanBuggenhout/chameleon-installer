@@ -406,6 +406,12 @@ variable "warehouse_crawl_schedule" {
   default     = "0 6 * * *"
 }
 
+variable "pii_vault_sync_schedule" {
+  description = "Cron schedule (Cloud Scheduler) for the daily PII vault backfill/sync job."
+  type        = string
+  default     = "0 7 * * *"
+}
+
 variable "enable_pii_audit_mirror" {
   description = "Grant Key Vault dataEditor on the compliance dataset + set PII_AUDIT_DATASET_ID so declarations are mirrored to compliance.pii_metadata_registry. Requires the Terraform identity to own the compliance dataset. Declarations are durable in Firestore regardless; this is an audit-evidence copy."
   type        = bool
