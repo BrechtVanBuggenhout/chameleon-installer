@@ -82,6 +82,19 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
 
   template {
     service_account = google_service_account.pii_ingestor_worker.email
+    # Cloud Run's default (300s) isn't enough for a real first-time PII
+    # vault sync: a customer's existing table can have hundreds of
+    # thousands of rows, chunked at CHUNK_SIZE=100 -- each chunk is a real
+    # network round trip (key creation, encryption context fetch, a
+    # BigQuery load job), so even a modest per-chunk latency adds up to
+    # far more than 5 minutes for a large table. Set to Cloud Run's actual
+    # maximum so each invocation does as much useful work as possible.
+    # Safe regardless of table size or how long a single run takes: the
+    # sync is idempotent (only ever processes users not yet in the vault),
+    # so getting cut off mid-run just means the next invocation --
+    # manual, or tomorrow's scheduled one -- picks up exactly where this
+    # one left off, no double-processing or lost work either way.
+    timeout = "3600s"
     containers {
       image = var.pii_ingestor_worker_container_image
       resources {
