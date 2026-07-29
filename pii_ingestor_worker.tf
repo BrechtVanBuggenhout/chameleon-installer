@@ -87,15 +87,16 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
       resources {
         limits = {
           cpu = "1000m"
-          # 512Mi was already close to the edge just from this service's own
-          # baseline (FastAPI/pandas/google-cloud-bigquery/pubsub/storage all
-          # loaded at startup) -- the new PII vault sync job's additional
-          # BigQuery usage pushed a real customer over it mid-request
-          # ("Memory limit of 512 MiB exceeded with 530 MiB used"), which
-          # Cloud Run surfaces to the caller as a 503 with no application
-          # error logged. Doubling for real headroom, not just enough to
-          # limp past today's failure.
-          memory = "1Gi"
+          # Went 512Mi -> 1Gi -> 2Gi. Each OOM was only a modest amount over
+          # whatever the current limit was (18MiB, then 1MiB, then 49MiB
+          # over) even after the sync job was fixed to process in bounded
+          # chunks (see pii_vault_sync.py CHUNK_SIZE) -- that pattern says
+          # this service's baseline footprint (FastAPI + pandas + every
+          # google-cloud-* client loaded at startup) sits close to whatever
+          # limit is set, and real request work tips it over regardless of
+          # chunk size. Giving real headroom above that baseline this time
+          # instead of doubling again and hoping.
+          memory = "2Gi"
         }
       }
       env {
