@@ -12,9 +12,9 @@ resource "google_bigquery_table" "pii_vault" {
   count       = var.enable_pii_ingestor_worker ? 1 : 0
   dataset_id  = google_bigquery_dataset.chameleon.dataset_id
   table_id    = "pii_vault"
-  description = "Central encrypted PII store for manually-declared resources, synced daily from their source tables. Join on (tenant_id, user_id) for real values via Key Vault's /decrypt; crypto-shredding a user's key here makes every row here permanently unreadable."
+  description = "Central encrypted PII store for manually-declared resources, synced daily from their source tables. One row per (tenant_id, user_id, resource_id, field_name) -- that's the natural unique key, not the whole row -- so adding a newly-declared field to an already-synced resource just appends the missing rows for existing users rather than requiring any update-in-place. Join on (tenant_id, user_id) for real values via Key Vault's /decrypt; crypto-shredding a user's key makes every row for that user permanently unreadable, regardless of how many rows they have here."
 
-  clustering = ["tenant_id", "user_id"]
+  clustering = ["tenant_id", "user_id", "resource_id", "field_name"]
 
   encryption_configuration {
     kms_key_name = google_kms_crypto_key.bigquery_dataset_key.id
@@ -40,36 +40,28 @@ resource "google_bigquery_table" "pii_vault" {
       description = "Which declared PII registry resource this row was synced from, e.g. bigquery:project.dataset.federated_user"
     },
     {
+      name        = "field_name"
+      type        = "STRING"
+      mode        = "NULLABLE"
+      description = "Declared PII field name this row encrypts, e.g. 'email' or 'phone' -- one row per field, not a nested array, so this is part of this row's identity"
+    },
+    {
       name        = "key_id"
       type        = "STRING"
       mode        = "NULLABLE"
-      description = "UUID of the specific key version used to encrypt this row's fields"
+      description = "UUID of the specific key version used to encrypt this row's value"
     },
     {
-      name        = "pii_fields"
-      type        = "RECORD"
-      mode        = "REPEATED"
-      description = "One entry per declared PII field for this resource, same shape as raw_users.pii_fields."
-      fields = [
-        {
-          name        = "field_name"
-          type        = "STRING"
-          mode        = "NULLABLE"
-          description = "Declared PII field name, e.g. 'email' or 'phone'"
-        },
-        {
-          name        = "token"
-          type        = "STRING"
-          mode        = "NULLABLE"
-          description = "HMAC-SHA256 token of this field's value for deterministic joins"
-        },
-        {
-          name        = "encrypted_value"
-          type        = "BYTES"
-          mode        = "NULLABLE"
-          description = "Encrypted value for this field (CMEK encrypted)"
-        }
-      ]
+      name        = "token"
+      type        = "STRING"
+      mode        = "NULLABLE"
+      description = "HMAC-SHA256 token of this field's value for deterministic joins"
+    },
+    {
+      name        = "encrypted_value"
+      type        = "BYTES"
+      mode        = "NULLABLE"
+      description = "Encrypted value for this field (CMEK encrypted)"
     },
     {
       name        = "synced_at"
