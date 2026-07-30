@@ -331,6 +331,33 @@ resource "google_cloud_run_v2_service_iam_member" "pubsub_worker_invoker" {
   member   = "serviceAccount:${google_service_account.data_pipeline.email}"
 }
 
+# IAM: Allow Key Vault to invoke the Ingestor Worker's on-demand sync route
+# (POST /pii-registry/sync-now) -- same role Pub/Sub already holds above, so
+# the console's "Sync Now" button can trigger the same job the scheduler
+# fires daily, without waiting for the next scheduled run.
+resource "google_cloud_run_v2_service_iam_member" "key_vault_worker_invoker" {
+  count    = var.enable_pii_ingestor_worker ? 1 : 0
+  location = google_cloud_run_v2_service.pii_ingestor_worker[0].location
+  name     = google_cloud_run_v2_service.pii_ingestor_worker[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
+# IAM: Allow Key Vault to read the worker's Cloud Run Admin API metadata
+# (GetService) -- run.invoker above only grants the ability to call the
+# service, not to read its .uri. Key Vault needs to resolve that URL itself
+# at runtime (see PII_INGESTOR_WORKER_SERVICE_NAME/_REGION in key_vault.tf),
+# since referencing this resource's .uri directly from key_vault.tf would be
+# a Terraform dependency cycle -- this service already depends on Key
+# Vault's own .uri for VAULT_BASE_URL below.
+resource "google_cloud_run_v2_service_iam_member" "key_vault_worker_viewer" {
+  count    = var.enable_pii_ingestor_worker ? 1 : 0
+  location = google_cloud_run_v2_service.pii_ingestor_worker[0].location
+  name     = google_cloud_run_v2_service.pii_ingestor_worker[0].name
+  role     = "roles/run.viewer"
+  member   = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # Scheduled warehouse metadata crawl: periodically flags undeclared / drifted PII
 # tables (e.g. Fivetran-created) and emits WAREHOUSE_METADATA_DISCOVERED lineage events,
 # which surface in the Console's "declare undeclared table" workflow. Reuses the

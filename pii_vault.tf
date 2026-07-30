@@ -14,6 +14,16 @@ resource "google_bigquery_table" "pii_vault" {
   table_id    = "pii_vault"
   description = "Central encrypted PII store for manually-declared resources, synced daily from their source tables. One row per (tenant_id, user_id, resource_id, field_name) -- that's the natural unique key, not the whole row -- so adding a newly-declared field to an already-synced resource just appends the missing rows for existing users rather than requiring any update-in-place. Join on (tenant_id, user_id) for real values via Key Vault's /decrypt; crypto-shredding a user's key makes every row for that user permanently unreadable, regardless of how many rows they have here."
 
+  # Matches raw_users' precedent below (see its own comment): BigQuery can't
+  # ALTER a REPEATED RECORD column into flat scalar columns in place, so a
+  # schema change like the nested->flat one this table just went through
+  # requires Terraform to destroy and recreate it -- which the provider's
+  # deletion_protection default (true when unset) blocks outright. Hit for
+  # real: both dev and prod CI failed on this exact table with "cannot
+  # destroy table ... without setting deletion_protection=false" right after
+  # merging that schema change.
+  deletion_protection = false
+
   clustering = ["tenant_id", "user_id", "resource_id", "field_name"]
 
   encryption_configuration {

@@ -647,6 +647,32 @@ resource "google_cloud_run_v2_service" "key_vault" {
         value = google_pubsub_topic.pii_lineage_events.name
       }
 
+      # Lets the console's "Sync Now" button trigger the same on-demand
+      # /pii-registry/sync-now route the daily scheduler fires. Deliberately
+      # NOT google_cloud_run_v2_service.pii_ingestor_worker[0].uri -- the
+      # worker already depends on THIS service's own .uri for VAULT_BASE_URL
+      # above, so a reverse reference here is a real Terraform dependency
+      # cycle (confirmed via `terraform validate`), not just a style choice.
+      # Key Vault resolves the worker's actual URL itself at runtime via the
+      # Cloud Run Admin API (see key_vault_worker_viewer below for the read
+      # IAM this needs, alongside key_vault_worker_invoker for the call
+      # itself), using only these plain, dependency-free values.
+      dynamic "env" {
+        for_each = var.enable_pii_ingestor_worker ? [1] : []
+        content {
+          name  = "PII_INGESTOR_WORKER_SERVICE_NAME"
+          value = "${var.app_name}-pii-ingestor-worker-${local.instance_name}"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.enable_pii_ingestor_worker ? [1] : []
+        content {
+          name  = "PII_INGESTOR_WORKER_REGION"
+          value = var.gcp_region
+        }
+      }
+
       # Omitted entirely when key_vault_auth_bypass_enabled is true — Key
       # Vault's own code (main.ts) runs with NO auth check when this env var
       # is absent. Guarded to dev tier only by the variable's own validation.
