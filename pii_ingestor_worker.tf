@@ -74,6 +74,16 @@ resource "google_pubsub_topic_iam_member" "ingestor_dlq_topic_publisher" {
   member  = "serviceAccount:${google_service_account.pii_ingestor_worker.email}"
 }
 
+# IAM: the worker publishes its own pii_vault_sync_chunks messages
+# (PiiVaultSyncJob.enumerate_resource), then consumes them right back via
+# the push subscription below -- same service, both ends.
+resource "google_pubsub_topic_iam_member" "ingestor_pii_vault_sync_chunk_publisher" {
+  project = var.gcp_project_id
+  topic   = google_pubsub_topic.pii_vault_sync_chunks.name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.pii_ingestor_worker.email}"
+}
+
 # Cloud Run PII Ingestor Worker Service
 resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
   count    = var.enable_pii_ingestor_worker ? 1 : 0
@@ -151,6 +161,10 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
       env {
         name  = "LINEAGE_TOPIC_ID"
         value = google_pubsub_topic.pii_lineage_events.id
+      }
+      env {
+        name  = "PII_VAULT_SYNC_CHUNK_TOPIC_ID"
+        value = google_pubsub_topic.pii_vault_sync_chunks.id
       }
       env {
         name  = "TENANT_MODE"
@@ -320,6 +334,27 @@ resource "google_pubsub_subscription" "pii_ingestion_worker_push" {
   }
 
   ack_deadline_seconds = 60
+}
+
+# Push subscription for pii_vault_sync_chunks -- each message is one chunk
+# (PiiVaultSyncJob.CHUNK_SIZE user IDs) of one declared resource, published
+# by /api/v1/pii-vault-sync's enumeration step. 300s (well under Pub/Sub's
+# 600s push ceiling) gives real headroom over a chunk's expected processing
+# time while still leaving margin before Pub/Sub would consider a slow
+# chunk un-acked and redeliver it.
+resource "google_pubsub_subscription" "pii_vault_sync_chunk_worker_push" {
+  name  = "pii-vault-sync-chunk-worker-sub-${local.instance_name}"
+  topic = google_pubsub_topic.pii_vault_sync_chunks.name
+
+  push_config {
+    push_endpoint = var.enable_pii_ingestor_worker ? "${google_cloud_run_v2_service.pii_ingestor_worker[0].uri}/api/v1/pii-vault-sync-chunk" : "https://placeholder-url"
+
+    oidc_token {
+      service_account_email = google_service_account.data_pipeline.email
+    }
+  }
+
+  ack_deadline_seconds = 300
 }
 
 # IAM: Allow Pub/Sub to invoke the Ingestor Worker

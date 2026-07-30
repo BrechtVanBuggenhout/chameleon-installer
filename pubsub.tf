@@ -177,6 +177,28 @@ resource "google_pubsub_subscription" "janitor_dlq_bq" {
   depends_on = [google_project_iam_member.pubsub_bq_editor]
 }
 
+# Pub/Sub - PII Vault Sync Chunk Fan-Out
+#
+# Fan-out target for PiiVaultSyncJob.enumerate_resource: one message per
+# chunk of user IDs, consumed by the worker's /api/v1/pii-vault-sync-chunk
+# via the push subscription below. This is what makes the trigger itself
+# (POST /api/v1/pii-vault-sync, called directly by Cloud Scheduler and by
+# Key Vault's Sync Now) stay fast regardless of table size -- the actual
+# encrypt-diff-insert work happens later, per chunk, off of this topic,
+# not synchronously inside the trigger call. See pii_vault_sync.py's
+# module docstring for the real problem this replaced: a first-time
+# backfill of Immoscoop's ~530k users completed correctly server-side as
+# one synchronous call, but the client that triggered it gave up waiting
+# long before the job actually finished.
+resource "google_pubsub_topic" "pii_vault_sync_chunks" {
+  name = "pii-vault-sync-chunks-${local.instance_name}"
+
+  labels = merge(var.labels, {
+    environment = "data-pipeline"
+    purpose     = "pii-vault-sync-chunk-fan-out"
+  })
+}
+
 # IAM: Allow Pub/Sub to write to BigQuery
 resource "google_project_iam_member" "pubsub_bq_editor" {
   project = var.gcp_project_id
