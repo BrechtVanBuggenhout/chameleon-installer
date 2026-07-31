@@ -414,6 +414,17 @@ resource "google_storage_bucket_iam_member" "key_vault_audit_bucket_writer" {
   member = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# IAM: Key Vault can read back its own previously-stored certificates --
+# needed by GET /certificate/:userId, which returns the exact certificate
+# that was actually issued (see certificate-service.ts's
+# getCertificateForUser) instead of re-signing a fresh one on every call.
+# objectCreator above is write-only and doesn't cover this.
+resource "google_storage_bucket_iam_member" "key_vault_audit_bucket_reader" {
+  bucket = google_storage_bucket.audit_logs.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # IAM: Key Vault can read from landing zone bucket (for lineage tracking)
 resource "google_storage_bucket_iam_member" "key_vault_landing_bucket_reader" {
   bucket = google_storage_bucket.landing_zone.name
