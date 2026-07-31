@@ -192,6 +192,27 @@ resource "google_kms_crypto_key_iam_member" "key_vault_signing_viewer" {
   member        = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# Least-privilege role for POST /admin/signing-key/rotate: mint a new version
+# and promote it to primary. Deliberately narrower than roles/cloudkms.admin,
+# which would also let the runtime change this key's own IAM bindings --
+# signerVerifier/viewer above already cover everything else rotation needs
+# (signing, listing/reading versions).
+resource "google_project_iam_custom_role" "key_vault_signing_kms_operator" {
+  role_id     = "keyVaultSigningKmsOperator_${local.instance_short}"
+  title       = "Key Vault Signing Key Rotator (${local.instance_name})"
+  description = "Minimum KMS permissions to rotate the Certificate of Destruction signing key"
+  permissions = [
+    "cloudkms.cryptoKeyVersions.create",
+    "cloudkms.cryptoKeys.update",
+  ]
+}
+
+resource "google_kms_crypto_key_iam_member" "key_vault_signing_rotator" {
+  crypto_key_id = google_kms_crypto_key.certificate_signing_key.id
+  role          = google_project_iam_custom_role.key_vault_signing_kms_operator.name
+  member        = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # IAM: Key Vault can read/write Firestore (public ledger + user key registry)
 resource "google_project_iam_member" "key_vault_firestore" {
   project = var.gcp_project_id
@@ -603,11 +624,6 @@ resource "google_cloud_run_v2_service" "key_vault" {
       }
 
       env {
-        name  = "CLOUD_KMS_SIGNING_KEY_VERSION"
-        value = var.key_vault_signing_key_version
-      }
-
-      env {
         name  = "FIRESTORE_DELETION_REQUEST_COLLECTION"
         value = var.key_vault_firestore_deletion_request_collection
       }
@@ -892,4 +908,63 @@ resource "google_cloud_run_v2_service_iam_member" "key_vault_data_plane_invoker"
   name     = google_cloud_run_v2_service.pii_ingestor_worker[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
+# Explicit invoker grant for the rotation scheduler below, kept separate from
+# key_vault_public_invoker -- that one is conditional on
+# key_vault_allow_unauthenticated (false by default for BYOC/customer
+# deployments), so machine-to-machine callers need their own grant to work
+# regardless of that setting. Key Vault invokes itself here: no new service
+# account needed, it already has an identity and this doesn't broaden what
+# that identity can already reach.
+resource "google_cloud_run_v2_service_iam_member" "key_vault_self_invoker" {
+  project  = var.gcp_project_id
+  location = google_cloud_run_v2_service.key_vault.location
+  name     = google_cloud_run_v2_service.key_vault.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
+# Reads the CURRENT value of the shared API key so the scheduler job below
+# can authenticate past Key Vault's own app-level auth hook (main.ts) --
+# that hook is the real perimeter here (Cloud Run's own IAM is bypassed
+# entirely when key_vault_allow_unauthenticated=true, Chameleon's own
+# dev/prod setting). Requires whatever identity runs `terraform apply` to
+# have secretmanager.versions.access on this secret.
+data "google_secret_manager_secret_version" "vault_api_key_current" {
+  secret  = google_secret_manager_secret.vault_api_key.secret_id
+  version = "latest"
+}
+
+# Periodically rotates the Certificate of Destruction signing key: mints a
+# new KMS key version and promotes it to primary. Old versions are never
+# destroyed (see certificate-service.ts's getJwks()), so this only ever adds
+# a key to the JWKS response -- it can't invalidate a previously-issued
+# certificate. Same OIDC + Cloud Scheduler pattern as pii_vault_sync above.
+resource "google_cloud_scheduler_job" "signing_key_rotation" {
+  name        = "${var.app_name}-signing-key-rotation-${local.instance_name}"
+  description = "Periodically rotates the Certificate of Destruction signing key"
+  schedule    = var.signing_key_rotation_schedule
+  region      = var.gcp_region
+  time_zone   = "Etc/UTC"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${google_cloud_run_v2_service.key_vault.uri}/admin/signing-key/rotate"
+
+    headers = {
+      "x-api-key" = data.google_secret_manager_secret_version.vault_api_key_current.secret_data
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.key_vault.email
+      audience              = google_cloud_run_v2_service.key_vault.uri
+    }
+  }
+
+  depends_on = [
+    google_project_service.cloudscheduler,
+    google_cloud_run_v2_service_iam_member.key_vault_self_invoker,
+    google_kms_crypto_key_iam_member.key_vault_signing_rotator,
+  ]
 }

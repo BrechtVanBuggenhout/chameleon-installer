@@ -190,10 +190,6 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
         name  = "KMS_SIGNING_KEY_NAME"
         value = google_kms_crypto_key.certificate_signing_key.name
       }
-      env {
-        name  = "KMS_SIGNING_KEY_VERSION"
-        value = var.key_vault_signing_key_version
-      }
       # Authenticates the worker's VaultClient to the Key Vault's app-level
       # VAULT_API_KEY hook (same shared secret the console uses).
       env {

@@ -375,12 +375,6 @@ variable "key_vault_firestore_deletion_request_collection" {
   default     = "deletion_requests"
 }
 
-variable "key_vault_signing_key_version" {
-  description = "KMS signing key version used for Certificate of Destruction signing. Bump this when the signing key is rotated."
-  type        = string
-  default     = "1"
-}
-
 variable "key_vault_log_level" {
   description = "Log level for the Key Vault Cloud Run service"
   type        = string
@@ -410,6 +404,12 @@ variable "pii_vault_sync_schedule" {
   description = "Cron schedule (Cloud Scheduler) for the daily PII vault backfill/sync job."
   type        = string
   default     = "0 7 * * *"
+}
+
+variable "signing_key_rotation_schedule" {
+  description = "Cron schedule (Cloud Scheduler) for rotating the Certificate of Destruction signing key. Old versions are never destroyed, so shortening this only adds versions to the JWKS response, it never breaks previously-issued certificates."
+  type        = string
+  default     = "0 3 1 */3 *" # Approximately every 90 days -- 1st of every 3rd month, 03:00 UTC
 }
 
 variable "enable_pii_audit_mirror" {
