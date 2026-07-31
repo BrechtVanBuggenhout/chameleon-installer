@@ -192,18 +192,22 @@ resource "google_kms_crypto_key_iam_member" "key_vault_signing_viewer" {
   member        = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
-# Least-privilege role for POST /admin/signing-key/rotate: mint a new version
-# and promote it to primary. Deliberately narrower than roles/cloudkms.admin,
-# which would also let the runtime change this key's own IAM bindings --
-# signerVerifier/viewer above already cover everything else rotation needs
-# (signing, listing/reading versions).
+# Least-privilege role for POST /admin/signing-key/rotate: mint a new
+# version (that's the entire operation -- see the role's own comment for why
+# there's no separate promote-to-primary step). Deliberately narrower than
+# roles/cloudkms.admin, which would also let the runtime change this key's
+# own IAM bindings -- signerVerifier/viewer above already cover everything
+# else rotation needs (signing, listing/reading versions).
 resource "google_project_iam_custom_role" "key_vault_signing_kms_operator" {
   role_id     = "keyVaultSigningKmsOperator_${local.instance_short}"
   title       = "Key Vault Signing Key Rotator (${local.instance_name})"
   description = "Minimum KMS permissions to rotate the Certificate of Destruction signing key"
+  # No cloudkms.cryptoKeys.update -- GCP KMS has no "primary version" concept
+  # for ASYMMETRIC_SIGN keys (UpdateCryptoKeyPrimaryVersion rejects it with
+  # FAILED_PRECONDITION), so there's no promote-to-primary step to grant for.
+  # Minting a version is the entire rotation operation now.
   permissions = [
     "cloudkms.cryptoKeyVersions.create",
-    "cloudkms.cryptoKeys.update",
   ]
 }
 
@@ -937,10 +941,12 @@ data "google_secret_manager_secret_version" "vault_api_key_current" {
 }
 
 # Periodically rotates the Certificate of Destruction signing key: mints a
-# new KMS key version and promotes it to primary. Old versions are never
-# destroyed (see certificate-service.ts's getJwks()), so this only ever adds
-# a key to the JWKS response -- it can't invalidate a previously-issued
-# certificate. Same OIDC + Cloud Scheduler pattern as pii_vault_sync above.
+# new KMS key version, which the app treats as "current" simply for being
+# the newest ENABLED one (see certificate-service.ts's
+# getCurrentSigningKeyVersion). Old versions are never destroyed (see
+# getJwks()), so this only ever adds a key to the JWKS response -- it can't
+# invalidate a previously-issued certificate. Same OIDC + Cloud Scheduler
+# pattern as pii_vault_sync above.
 resource "google_cloud_scheduler_job" "signing_key_rotation" {
   name        = "${var.app_name}-signing-key-rotation-${local.instance_name}"
   description = "Periodically rotates the Certificate of Destruction signing key"
