@@ -704,6 +704,34 @@ resource "google_cloud_run_v2_service" "key_vault" {
         }
       }
 
+      # Decrypted views (decrypted_views.tf) -- all three env vars omitted
+      # entirely, as a group, when the flag is off. main.ts treats an unset
+      # DECRYPTED_VIEWS_DATASET as "feature disabled," registering neither
+      # route.
+      dynamic "env" {
+        for_each = var.enable_decrypted_views ? [1] : []
+        content {
+          name  = "DECRYPTED_VIEWS_DATASET"
+          value = google_bigquery_dataset.decrypted_views[0].dataset_id
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.enable_decrypted_views ? [1] : []
+        content {
+          name  = "DECRYPTED_VIEWS_BATCH_DECRYPT_FUNCTION_REF"
+          value = "${var.gcp_project_id}.${google_bigquery_dataset.decrypted_views[0].dataset_id}.${local.decrypted_views_batch_decrypt_routine_id}"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.enable_decrypted_views ? [1] : []
+        content {
+          name  = "DECRYPTED_VIEWS_CONNECTION_SA_EMAIL"
+          value = google_bigquery_connection.decrypted_views[0].cloud_resource[0].service_account_id
+        }
+      }
+
       # Omitted entirely when key_vault_auth_bypass_enabled is true — Key
       # Vault's own code (main.ts) runs with NO auth check when this env var
       # is absent. Guarded to dev tier only by the variable's own validation.

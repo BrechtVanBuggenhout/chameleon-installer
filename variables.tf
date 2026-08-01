@@ -394,6 +394,13 @@ variable "enable_pii_ingestor_worker" {
   default     = false
 }
 
+# Decentralized decrypted views (see decrypted_views.tf)
+variable "enable_decrypted_views" {
+  description = "Enable customer-declared BigQuery Authorized Views that live-decrypt PII at query time via a Remote Function, without ever materializing plaintext. Requires key_vault_allow_unauthenticated = false (enforced by a check block in decrypted_views.tf)."
+  type        = bool
+  default     = false
+}
+
 variable "warehouse_crawl_schedule" {
   description = "Cron schedule (Cloud Scheduler) for the warehouse metadata crawl."
   type        = string
