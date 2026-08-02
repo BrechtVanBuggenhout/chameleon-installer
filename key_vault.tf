@@ -732,6 +732,21 @@ resource "google_cloud_run_v2_service" "key_vault" {
         }
       }
 
+      # The central pii_vault table -- the one and only source every
+      # decrypted view is built on top of, never a customer-supplied
+      # resource id. Referenced as a literal table name, not
+      # google_bigquery_table.pii_vault[0].table_id, since that resource is
+      # itself gated by enable_pii_ingestor_worker -- the precondition below
+      # on google_bigquery_connection.decrypted_views requires that flag be
+      # on, so the table is guaranteed to exist whenever this env var is set.
+      dynamic "env" {
+        for_each = var.enable_decrypted_views ? [1] : []
+        content {
+          name  = "PII_VAULT_RESOURCE_ID"
+          value = "bigquery:${var.gcp_project_id}.${google_bigquery_dataset.chameleon.dataset_id}.pii_vault"
+        }
+      }
+
       # Omitted entirely when key_vault_auth_bypass_enabled is true — Key
       # Vault's own code (main.ts) runs with NO auth check when this env var
       # is absent. Guarded to dev tier only by the variable's own validation.
