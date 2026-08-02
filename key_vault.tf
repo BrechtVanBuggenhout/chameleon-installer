@@ -704,10 +704,10 @@ resource "google_cloud_run_v2_service" "key_vault" {
         }
       }
 
-      # Decrypted views (decrypted_views.tf) -- all three env vars omitted
-      # entirely, as a group, when the flag is off. main.ts treats an unset
-      # DECRYPTED_VIEWS_DATASET as "feature disabled," registering neither
-      # route.
+      # Decrypted views (decrypted_views.tf) -- the first two env vars are
+      # omitted entirely, as a group, when the flag is off. main.ts treats
+      # an unset DECRYPTED_VIEWS_DATASET as "feature disabled," registering
+      # neither route.
       dynamic "env" {
         for_each = var.enable_decrypted_views ? [1] : []
         content {
@@ -724,11 +724,16 @@ resource "google_cloud_run_v2_service" "key_vault" {
         }
       }
 
+      # Additionally gated on decrypted_views_connection_sa_unique_id being
+      # set, not just the feature flag -- see that variable's own
+      # description for why Terraform can't derive this value itself. Left
+      # unset, the batch-decrypt route has no configured caller identity
+      # and fails closed (503) rather than silently accepting any caller.
       dynamic "env" {
-        for_each = var.enable_decrypted_views ? [1] : []
+        for_each = (var.enable_decrypted_views && var.decrypted_views_connection_sa_unique_id != null) ? [1] : []
         content {
-          name  = "DECRYPTED_VIEWS_CONNECTION_SA_EMAIL"
-          value = google_bigquery_connection.decrypted_views[0].cloud_resource[0].service_account_id
+          name  = "DECRYPTED_VIEWS_CONNECTION_SA_UNIQUE_ID"
+          value = var.decrypted_views_connection_sa_unique_id
         }
       }
 

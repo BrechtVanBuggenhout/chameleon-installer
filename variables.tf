@@ -401,6 +401,33 @@ variable "enable_decrypted_views" {
   default     = false
 }
 
+variable "decrypted_views_connection_sa_unique_id" {
+  description = <<-EOT
+    Numeric unique ID (the JWT "sub"/"azp" claim) of the auto-provisioned
+    service account backing the decrypted-views BigQuery connection --
+    chameleon-key-vault's batch-decrypt route compares this against every
+    caller's verified token, since a real token from this kind of caller
+    never carries an "email" claim to compare against instead.
+
+    Can't be derived by Terraform: confirmed live that Google exposes no
+    API for it from a customer project (iam.serviceAccounts.get denies
+    access to this class of shadow/service-agent SA even for the project
+    Owner, and BigQuery's own Connections API only ever returns the SA's
+    email). Must be captured once, manually, from a real rejected
+    request's logged token payload (chameleon-key-vault's own diagnostic
+    logging surfaces it on any mismatch) and set here. Only needs
+    re-capturing if this exact connection is ever destroyed and recreated
+    -- a new auto-provisioned SA gets a new unique ID.
+
+    Left unset (null), the batch-decrypt route has no configured caller
+    identity and fails closed (503) on every request -- decrypted views
+    are provisioned but non-functional until this is set, not silently
+    insecure.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "warehouse_crawl_schedule" {
   description = "Cron schedule (Cloud Scheduler) for the warehouse metadata crawl."
   type        = string
