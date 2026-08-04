@@ -172,6 +172,62 @@ considering the install done.
 If all four steps work, the install is verified end to end: discovery,
 encryption, key destruction, and provable erasure are all live.
 
+### Optional: decrypted views, source redaction, and on-demand decrypt
+
+These three are opt-in, more advanced features layered on top of the core
+loop above — skip this section on a first install if you just want the
+core loop working. Do this after step 3 (deletion triggered), so you can
+confirm the "before" state before `test-user-1` is deleted and the "after"
+state once they are.
+
+**5. Decrypted views** (requires `enable_decrypted_views = true` in
+`terraform.tfvars`, unset by default):
+
+- Set it, then `terraform apply` again. The first time this is enabled on
+  a fresh project, expect two one-time steps:
+  - **IAM self-grant**: the identity applying Terraform typically can't
+    grant IAM policy to itself. If apply fails on
+    `google_bigquery_connection_iam_member.terraform_deployer_connection_admin`,
+    run just that one resource under an Owner-level identity —
+    `terraform apply -target=google_bigquery_connection_iam_member.terraform_deployer_connection_admin` —
+    then re-run the full apply normally.
+  - **Connection SA unique ID**: `decrypted_views_connection_sa_unique_id`
+    can't be looked up via any GCP API. After the connection exists, make
+    one request to the batch-decrypt endpoint without a valid token, find
+    the resulting warning in Key Vault's Cloud Run logs, and read the
+    numeric `sub` claim out of the logged (already signature-verified)
+    token payload. Set that value in `terraform.tfvars`, re-apply.
+- In the console, declare a PII field as `ENCRYPT` in the Registry if you
+  haven't already, click **Sync now**, then go to **Decrypted Views** and
+  declare a view over `test-user-1`'s email field.
+- Query the resulting BigQuery view directly — it should return the real
+  `test@example.com`, decrypted live at query time.
+- Re-run the identical query after `test-user-1`'s deletion (step 3) — it
+  should now return `NULL`, with no separate cleanup step needed. This is
+  the core guarantee: destroying the key alone, not a second delete pass,
+  is what breaks decryption.
+
+**6. Source redaction** (no extra `terraform.tfvars` changes — set per
+resource when you declare it):
+
+- When declaring a PII resource in the console's Registry, set **"What
+  happens to this table on deletion"** to `REDACT_IN_PLACE` (nulls the
+  declared columns directly in your source table on deletion) or
+  `SHADOW_COPY` (leaves your source table untouched; maintains a live,
+  auto-decrypting `{table}_deidentified` view alongside it instead).
+- After `test-user-1`'s deletion, confirm the behavior you chose: the
+  source table's declared column is `NULL` (`REDACT_IN_PLACE`), or the
+  `{table}_deidentified` view no longer returns their row (`SHADOW_COPY`).
+
+**7. On-demand decrypt** (works as soon as `pii_vault` has synced data —
+no extra setup beyond what step 5 already needed):
+
+- In the console, go to **Decrypt**, pick the resource and field you
+  declared above, enter `test-user-1`, and look up the value. It should
+  match what you ingested in step 2.
+- Repeat after deletion — it should report no value found, the same as
+  the decrypted view above.
+
 ## Local/dev testing
 
 For testing against a throwaway `dev`-tier instance without setting up
