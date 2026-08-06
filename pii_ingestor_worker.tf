@@ -416,3 +416,46 @@ resource "google_cloud_scheduler_job" "warehouse_metadata_crawl" {
     google_cloud_run_v2_service_iam_member.pubsub_worker_invoker
   ]
 }
+
+# IAM: Worker can read the source SHAs scripts/build-own-images.sh recorded
+# at build time, to compare against the public repos' current HEAD (see
+# enable_source_staleness_check in variables.tf). Not a Terraform-managed
+# secret -- the script owns this one's full lifecycle -- so this references
+# it by literal ID rather than google_secret_manager_secret.X.id like every
+# other grant in this file; gated behind the var since the secret won't
+# exist yet for a customer who hasn't run that script.
+resource "google_secret_manager_secret_iam_member" "pii_ingestor_worker_source_shas" {
+  count     = var.enable_source_staleness_check ? 1 : 0
+  secret_id = "chameleon-source-shas"
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.pii_ingestor_worker.email}"
+}
+
+# Scheduled source-staleness check: compares scripts/build-own-images.sh's
+# recorded source SHAs against the public repos' current HEAD and logs a
+# warning (this project's own Cloud Logging only, never sent to Chameleon)
+# if this deployment has drifted. Same OIDC pattern as warehouse_metadata_crawl.
+resource "google_cloud_scheduler_job" "source_staleness_check" {
+  count       = var.enable_source_staleness_check ? 1 : 0
+  name        = "${var.app_name}-source-staleness-${local.instance_name}"
+  description = "Weekly check: are this instance's build-own-images.sh source SHAs behind the public repos' current HEAD? Logs only, never leaves this project."
+  schedule    = var.source_staleness_check_schedule
+  region      = var.gcp_region
+  time_zone   = "Etc/UTC"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${google_cloud_run_v2_service.pii_ingestor_worker[0].uri}/api/v1/source-staleness-check"
+
+    oidc_token {
+      service_account_email = google_service_account.data_pipeline.email
+      audience              = google_cloud_run_v2_service.pii_ingestor_worker[0].uri
+    }
+  }
+
+  depends_on = [
+    google_project_service.cloudscheduler,
+    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker,
+    google_secret_manager_secret_iam_member.pii_ingestor_worker_source_shas,
+  ]
+}

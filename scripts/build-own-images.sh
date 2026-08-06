@@ -52,6 +52,12 @@ SERVICES="key-vault:https://github.com/BrechtVanBuggenhout/chameleon-vault.git p
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+# Accumulated as plain "name:sha" pairs (same portability constraint as
+# SERVICES above) and turned into the JSON blob written to Secret Manager
+# once every image has built successfully -- see the "source staleness"
+# block below.
+BUILT_SHAS=""
+
 for entry in $SERVICES; do
   name="${entry%%:*}"
   url="${entry#*:}"
@@ -68,7 +74,9 @@ for entry in $SERVICES; do
   # stale image. Cloning fresh into a real directory removes the ambiguity
   # entirely -- the build context is exactly whatever's on disk right now.
   git clone --depth 1 "$url" "$clone_dir"
+  sha="$(git -C "$clone_dir" rev-parse HEAD)"
   echo "  building from: $(git -C "$clone_dir" log -1 --oneline)"
+  BUILT_SHAS="${BUILT_SHAS} ${name}:${sha}"
 
   log "Building ${name}"
   # Cloud Run only runs linux/amd64. Without --platform, docker build
@@ -86,6 +94,39 @@ for entry in $SERVICES; do
 done
 
 # ---------------------------------------------------------------------------
+log "Recording source commits for the source-staleness check"
+# Lets a weekly Cloud Scheduler job (opt-in: enable_source_staleness_check in
+# terraform.tfvars) compare these against the public repos' current HEAD and
+# log a warning if this deployment has drifted -- see pii_ingestor_worker.tf.
+# Never sent anywhere outside this project; purely so re-running this same
+# script later can tell you whether it needed to. Building the JSON by hand
+# (not `jq`, which isn't a stated dependency of this script) since the value
+# shape is trivial and fixed.
+SHAS_JSON="{"
+first=1
+for entry in $BUILT_SHAS; do
+  svc_name="${entry%%:*}"
+  svc_sha="${entry#*:}"
+  if [ "$first" = 1 ]; then
+    first=0
+  else
+    SHAS_JSON="${SHAS_JSON},"
+  fi
+  SHAS_JSON="${SHAS_JSON}\"${svc_name}\":\"${svc_sha}\""
+done
+SHAS_JSON="${SHAS_JSON},\"builtAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+
+if gcloud secrets describe chameleon-source-shas --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "  chameleon-source-shas already exists, adding a new version"
+else
+  gcloud secrets create chameleon-source-shas \
+    --project="$PROJECT_ID" \
+    --replication-policy=automatic
+  echo "  created chameleon-source-shas"
+fi
+printf '%s' "$SHAS_JSON" | gcloud secrets versions add chameleon-source-shas --project="$PROJECT_ID" --data-file=-
+
+# ---------------------------------------------------------------------------
 log "Done"
 cat <<EOF
 
@@ -94,5 +135,11 @@ Set these in your terraform.tfvars before running bootstrap.sh:
   key_vault_container_image           = "${REGISTRY}/key-vault:latest"
   pii_ingestor_worker_container_image = "${REGISTRY}/pii-ingestor:latest"
   console_image                       = "${REGISTRY}/console:latest"
+
+Want a weekly reminder when these fall behind the public repos? Set
+enable_source_staleness_check = true in your terraform.tfvars and re-apply
+(after this first run -- it needs the chameleon-source-shas secret this
+script just wrote). It only logs to this project's own Cloud Logging, never
+to Chameleon -- see INSTALL.md for how to wire an alert to it.
 
 EOF

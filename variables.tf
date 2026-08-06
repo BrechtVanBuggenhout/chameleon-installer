@@ -440,6 +440,28 @@ variable "pii_vault_sync_schedule" {
   default     = "0 7 * * *"
 }
 
+# Source-staleness check (see pii_ingestor_worker.tf and
+# scripts/build-own-images.sh) -- only meaningful for BYOC customers who
+# built their own images from the public source repos rather than pulling
+# Chameleon's pre-built ones. Never sends anything to Chameleon; logs to
+# this project's own Cloud Logging only.
+variable "enable_source_staleness_check" {
+  description = "Enables a weekly check comparing this instance's build-own-images.sh source SHAs against the public repos' current HEAD, logged to Cloud Logging only (never sent to Chameleon). Requires the chameleon-source-shas secret to already exist (run scripts/build-own-images.sh first, then set this true and re-apply) and enable_pii_ingestor_worker = true, since the check endpoint lives on that service."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_source_staleness_check || var.enable_pii_ingestor_worker
+    error_message = "enable_source_staleness_check requires enable_pii_ingestor_worker to be true, since the staleness-check endpoint lives on that service."
+  }
+}
+
+variable "source_staleness_check_schedule" {
+  description = "Cron schedule (Cloud Scheduler) for the source-staleness check."
+  type        = string
+  default     = "0 9 * * 1" # weekly, Monday 09:00 UTC
+}
+
 variable "signing_key_rotation_schedule" {
   description = "Cron schedule (Cloud Scheduler) for rotating the Certificate of Destruction signing key. Old versions are never destroyed, so shortening this only adds versions to the JWKS response, it never breaks previously-issued certificates."
   type        = string
