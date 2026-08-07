@@ -176,6 +176,14 @@ resource "google_cloud_run_v2_service" "console" {
         value = google_cloud_run_v2_service.key_vault.uri
       }
 
+      # See variables.tf's console_service_credential comment -- deliberately
+      # a plain value, not a Secret Manager reference, since it's minted by
+      # chameleon-onboarding before this project exists at all.
+      env {
+        name  = "CONSOLE_SERVICE_CREDENTIAL"
+        value = var.console_service_credential
+      }
+
       env {
         name = "CONSOLE_PASSWORD"
         value_source {

@@ -318,6 +318,24 @@ variable "console_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
+# Minted by chameleon-onboarding at signup time (see that repo's
+# lib/customer-accounts.ts mintConsoleServiceCredential), not by this
+# Terraform config -- proves to onboarding's /api/console-auth/* routes
+# which customer account this specific console deployment belongs to.
+# Deliberately not routed through Secret Manager like vault_api_key/etc:
+# it's generated before this project (and therefore any per-project secret)
+# exists, and is handed to the console directly as a tfvars value (self-serve)
+# or injected by the provisioner (hosted). Left blank for deployments that
+# were never registered into the multi-project console account system
+# (e.g. Chameleon's own internal dev/prod instances) -- the console simply
+# can't call onboarding's API without it, which is fine for those.
+variable "console_service_credential" {
+  description = "Bearer credential this console deployment presents to chameleon-onboarding's /api/console-auth/* API to prove which customer account it belongs to. Blank if this instance isn't registered in the multi-project console account system."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "key_vault_artifact_registry_external_readers" {
   description = "IAM members (e.g. 'serviceAccount:key-vault@customer-project.iam.gserviceaccount.com') granted artifactregistry.reader on the Key Vault image repository. Populated per BYOC customer during onboarding so their own project's terraform apply can pull Chameleon-built images without needing their own CI. Empty for managed-dedicated (Chameleon already owns the registry project) and for Chameleon's own dev/prod."
   type        = list(string)
