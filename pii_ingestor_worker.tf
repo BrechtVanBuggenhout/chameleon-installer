@@ -105,6 +105,23 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
     # manual, or tomorrow's scheduled one -- picks up exactly where this
     # one left off, no double-processing or lost work either way.
     timeout = "3600s"
+    # Never explicitly set before -- Cloud Run v2 defaults to 80 concurrent
+    # requests per instance. enumerate_resource() publishes every chunk for
+    # a resource back-to-back with no throttling (~5,300 messages for
+    # Immoscoop's ~530k users at CHUNK_SIZE=100), so Pub/Sub's push
+    # subscription was delivering a burst of chunks fast enough for a
+    # single instance to end up running dozens of process_chunk() calls at
+    # once -- each holding its own BigQuery query result set, a BigQuery
+    # load job, and a Vault round-trip simultaneously. That's the real
+    # cause of both symptoms this service has actually hit: the OOMs
+    # despite three memory bumps (512Mi -> 1Gi -> 2Gi -> see below) were
+    # concurrent per-request memory piling up on top of this service's
+    # already-heavy baseline, not any single request growing; and the
+    # BigQuery 429s were dozens of concurrent load jobs/queries hitting
+    # pii_vault's per-table write-rate limit at once. Capping concurrency
+    # bounds both -- max_instance_count (below) still provides real
+    # throughput via more instances instead of more per-instance load.
+    max_instance_request_concurrency = 4
     containers {
       image = var.pii_ingestor_worker_container_image
       resources {
