@@ -44,14 +44,20 @@ resource "google_logging_project_sink" "compliance_audit_logs" {
   destination            = "storage.googleapis.com/${google_storage_bucket.audit_logs.name}"
   unique_writer_identity = true
   filter                 = <<-EOT
-    logName:"cloudaudit.googleapis.com" AND (
-      protoPayload.serviceName="bigquery.googleapis.com" OR
-      protoPayload.serviceName="cloudkms.googleapis.com" OR
-      protoPayload.serviceName="run.googleapis.com" OR
-      protoPayload.serviceName="datastore.googleapis.com" OR
-      protoPayload.serviceName="iam.googleapis.com" OR
-      protoPayload.serviceName="secretmanager.googleapis.com" OR
-      protoPayload.serviceName="storage.googleapis.com"
+    (
+      logName:"cloudaudit.googleapis.com" AND (
+        protoPayload.serviceName="bigquery.googleapis.com" OR
+        protoPayload.serviceName="cloudkms.googleapis.com" OR
+        protoPayload.serviceName="run.googleapis.com" OR
+        protoPayload.serviceName="datastore.googleapis.com" OR
+        protoPayload.serviceName="iam.googleapis.com" OR
+        protoPayload.serviceName="secretmanager.googleapis.com" OR
+        protoPayload.serviceName="storage.googleapis.com"
+      )
+    ) OR (
+      resource.type="cloud_run_revision" AND
+      resource.labels.service_name="${local.key_vault_service_name}" AND
+      jsonPayload.certificateChainAnchor=true
     )
   EOT
 
