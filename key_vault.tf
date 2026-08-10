@@ -407,6 +407,17 @@ resource "google_secret_manager_secret_iam_member" "key_vault_salesforce_secret"
   member    = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# IAM: Key Vault's /version endpoint reads the source SHA scripts/build-own-images.sh
+# recorded for this service at build time -- same secret, same existence
+# gate, and same reasoning as pii_ingestor_worker.tf's identical grant for
+# that service's own /version and source-staleness-check endpoints.
+resource "google_secret_manager_secret_iam_member" "key_vault_source_shas" {
+  count     = var.enable_source_staleness_check ? 1 : 0
+  secret_id = "chameleon-source-shas"
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # IAM: Key Vault can write to GCS (for audit evidence buckets)
 resource "google_storage_bucket_iam_member" "key_vault_audit_bucket_writer" {
   bucket = google_storage_bucket.audit_logs.name

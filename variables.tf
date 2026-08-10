@@ -464,7 +464,7 @@ variable "pii_vault_sync_schedule" {
 # Chameleon's pre-built ones. Never sends anything to Chameleon; logs to
 # this project's own Cloud Logging only.
 variable "enable_source_staleness_check" {
-  description = "Enables a weekly check comparing this instance's build-own-images.sh source SHAs against the public repos' current HEAD, logged to Cloud Logging only (never sent to Chameleon). Requires the chameleon-source-shas secret to already exist (run scripts/build-own-images.sh first, then set this true and re-apply) and enable_pii_ingestor_worker = true, since the check endpoint lives on that service."
+  description = "Enables a weekly check comparing this instance's build-own-images.sh source SHAs against the public repos' current HEAD, logged to Cloud Logging only (never sent to Chameleon). Also grants Key Vault's and the PII ingestor worker's own /version endpoints read access to the same recorded SHAs, so a deploy can be verified with a curl instead of a console login (the console's /version proxies Key Vault's, so all 3 services are covered) -- sourceSha/builtAt on /version stay null until this is enabled, even if you already ran build-own-images.sh. Requires the chameleon-source-shas secret to already exist (run scripts/build-own-images.sh first, then set this true and re-apply) and enable_pii_ingestor_worker = true, since the staleness-check endpoint itself lives on that service."
   type        = bool
   default     = false
 

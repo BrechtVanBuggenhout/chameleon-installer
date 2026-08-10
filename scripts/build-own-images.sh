@@ -6,8 +6,21 @@
 # optional: skip it and bootstrap.sh pulls Chameleon's pre-built images
 # instead, which is simpler and the default for most customers.
 #
+# On a re-run against a project that already has these services deployed
+# (i.e. you're rebuilding to pick up a fix, not installing for the first
+# time), this also redeploys each one with the image it just pushed --
+# `terraform apply` alone never does this (Cloud Run's `image` field is
+# deliberately excluded from Terraform's management; see key_vault.tf /
+# console.tf / pii_ingestor_worker.tf), so previously this was a manual
+# `gcloud run deploy` per service that was easy to forget. First-time
+# installs (no matching service exists yet) are unaffected -- see the
+# "Set these in your terraform.tfvars" step below, unchanged.
+#
 # Usage:
-#   ./scripts/build-own-images.sh <gcp_project_id> [region]
+#   ./scripts/build-own-images.sh [gcp_project_id] [region]
+#
+# gcp_project_id defaults to `gcloud config get-value project` if omitted.
+# region defaults to us-central1.
 #
 # Requires docker and gcloud, authenticated with access to gcp_project_id.
 # After this succeeds, set the three printed *_container_image /
@@ -15,13 +28,64 @@
 # bootstrap.sh.
 set -euo pipefail
 
-PROJECT_ID="${1:?Usage: build-own-images.sh <gcp_project_id> [region]}"
+log() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
+fail() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
+
+# Falls back to whatever `gcloud config` already has active rather than
+# always requiring the arg -- but only ever a fallback: an explicit arg
+# still wins, and an empty gcloud default still fails fast with the same
+# usage message as before, rather than silently building against whatever
+# project happened to be active.
+if [ -n "${1:-}" ]; then
+  PROJECT_ID="$1"
+else
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+  [ -n "$PROJECT_ID" ] || fail "Usage: build-own-images.sh <gcp_project_id> [region] (no project ID given, and no default project set in gcloud config)"
+fi
 REGION="${2:-us-central1}"
 REPO_NAME="chameleon"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}"
 
-log() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
-fail() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
+# Cloud Run service-name prefix each component is deployed under -- matches
+# key_vault.tf/console.tf/pii_ingestor_worker.tf's naming exactly
+# ("${var.app_name}-<component>-${local.instance_name}", app_name defaulting
+# to "chameleon"). No bash 4 associative arrays (see SERVICES below).
+service_name_prefix() {
+  case "$1" in
+    key-vault) echo "chameleon-key-vault-" ;;
+    pii-ingestor) echo "chameleon-pii-ingestor-worker-" ;;
+    console) echo "chameleon-console-" ;;
+  esac
+}
+
+# Finds the single Cloud Run service (if any) matching a component's name
+# prefix in this project/region and redeploys it with the image just
+# pushed. Doesn't know (or need to know) instance_name -- BYOC's model is
+# one instance per project, so a single match is the expected case. Zero
+# matches means nothing's been deployed here yet (first-time install,
+# bootstrap.sh hasn't run); more than one is genuinely ambiguous (multiple
+# instances sharing a project) and left for a manual, deliberate redeploy
+# rather than guessing which one you meant.
+redeploy_matching_service() {
+  component="$1"
+  image="$2"
+  prefix="$(service_name_prefix "$component")"
+
+  matches="$(gcloud run services list --project="$PROJECT_ID" --region="$REGION" \
+    --format='value(metadata.name)' --filter="metadata.name~^${prefix}" 2>/dev/null || true)"
+  match_count="$(printf '%s\n' "$matches" | grep -c . || true)"
+
+  if [ "$match_count" -eq 0 ]; then
+    echo "  no existing ${prefix}* Cloud Run service in ${PROJECT_ID}/${REGION} -- nothing to redeploy yet (first install? set the *_container_image values below in terraform.tfvars, then run bootstrap.sh)"
+  elif [ "$match_count" -gt 1 ]; then
+    echo "  multiple ${prefix}* Cloud Run services found -- not auto-redeploying, ambiguous which instance this is for:"
+    printf '    %s\n' $matches
+    echo "  redeploy the right one yourself: gcloud run deploy <name> --image=${image} --project=${PROJECT_ID} --region=${REGION}"
+  else
+    log "Redeploying ${matches} with the image just pushed"
+    gcloud run deploy "$matches" --image="$image" --project="$PROJECT_ID" --region="$REGION" --quiet
+  fi
+}
 
 # ---------------------------------------------------------------------------
 log "Preflight checks"
@@ -91,6 +155,8 @@ for entry in $SERVICES; do
   log "Pushing ${name}"
   docker push "$image"
   echo "  ${name} -> ${image}"
+
+  redeploy_matching_service "$name" "$image"
 done
 
 # ---------------------------------------------------------------------------
@@ -130,11 +196,21 @@ printf '%s' "$SHAS_JSON" | gcloud secrets versions add chameleon-source-shas --p
 log "Done"
 cat <<EOF
 
-Set these in your terraform.tfvars before running bootstrap.sh:
+Any existing Cloud Run service for these 3 components in ${PROJECT_ID}/${REGION}
+was just redeployed with the image built above (see "Redeploying ..." lines
+above, or "nothing to redeploy yet" if this is a first install).
+
+First install? Set these in your terraform.tfvars before running bootstrap.sh:
 
   key_vault_container_image           = "${REGISTRY}/key-vault:latest"
   pii_ingestor_worker_container_image = "${REGISTRY}/pii-ingestor:latest"
   console_image                       = "${REGISTRY}/console:latest"
+
+Verify a redeploy actually landed: curl each service's own /version (Key
+Vault and the PII ingestor worker directly; console's proxies Key Vault's)
+and check sourceSha against the SHAs this run just built -- see the
+"building from" lines above. Populating sourceSha at all requires
+enable_source_staleness_check = true in terraform.tfvars (see below).
 
 Want a weekly reminder when these fall behind the public repos? Set
 enable_source_staleness_check = true in your terraform.tfvars and re-apply
