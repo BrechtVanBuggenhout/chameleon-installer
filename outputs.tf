@@ -295,6 +295,11 @@ output "pii_registry_write_token_generated" {
   value       = local.auto_generate_secrets ? random_password.pii_registry_write_token[0].result : null
 }
 
+output "tenant_id" {
+  description = "The resolved tenant_id this deployment's console and data-pipelines worker actually share (local.tenant_id in main.tf -- coalesce(var.tenant_id, \"default-tenant\")). Lets the provisioner report the real value back to chameleon-onboarding instead of it assuming the default, which was silently wrong whenever var.tenant_id had been overridden."
+  value       = local.tenant_id
+}
+
 output "infrastructure_summary" {
   description = "High-level infrastructure summary"
   value = {

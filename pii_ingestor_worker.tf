@@ -487,3 +487,35 @@ resource "google_cloud_scheduler_job" "source_staleness_check" {
     google_secret_manager_secret_iam_member.pii_ingestor_worker_source_shas,
   ]
 }
+
+# Scheduled dbt-discovery publish: the chameleon_pii dbt package's
+# pii_discovery findings only reached the console when someone remembered to
+# run scripts/publish_dbt_pii_discovery.py by hand after a dbt build -- the
+# endpoint always existed, nothing ever called it on a schedule. Same
+# gating/SA/OIDC pattern as warehouse_metadata_crawl above (no separate
+# enable var -- both are "does this deployment run the ingestor worker at
+# all" questions, not independent opt-ins). No-op server-side if
+# DBT_PII_DISCOVERY_DATASETS isn't set, same as warehouse discovery.
+resource "google_cloud_scheduler_job" "dbt_pii_discovery" {
+  count       = var.enable_pii_ingestor_worker ? 1 : 0
+  name        = "${var.app_name}-dbt-pii-discovery-${local.instance_name}"
+  description = "Publish the chameleon_pii dbt package's undeclared-PII discovery findings into the console's live discovery feed"
+  schedule    = var.dbt_pii_discovery_schedule
+  region      = var.gcp_region
+  time_zone   = "Etc/UTC"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${google_cloud_run_v2_service.pii_ingestor_worker[0].uri}/api/v1/publish-dbt-pii-discovery"
+
+    oidc_token {
+      service_account_email = google_service_account.data_pipeline.email
+      audience              = google_cloud_run_v2_service.pii_ingestor_worker[0].uri
+    }
+  }
+
+  depends_on = [
+    google_project_service.cloudscheduler,
+    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker
+  ]
+}

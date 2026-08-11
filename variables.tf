@@ -480,6 +480,12 @@ variable "source_staleness_check_schedule" {
   default     = "0 9 * * 1" # weekly, Monday 09:00 UTC
 }
 
+variable "dbt_pii_discovery_schedule" {
+  description = "Cron schedule (Cloud Scheduler) for publishing the chameleon_pii dbt package's discovery findings into the console's live discovery feed."
+  type        = string
+  default     = "0 8 * * *" # daily, 08:00 UTC -- after a typical overnight dbt run
+}
+
 variable "signing_key_rotation_schedule" {
   description = "Cron schedule (Cloud Scheduler) for rotating the Certificate of Destruction signing key. Old versions are never destroyed, so shortening this only adds versions to the JWKS response, it never breaks previously-issued certificates."
   type        = string
