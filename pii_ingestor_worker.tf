@@ -304,7 +304,12 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
       }
     }
     scaling {
-      min_instance_count = 1
+      # prod keeps one warm instance -- a cold start on this service's Pub/Sub
+      # push subscription can otherwise blow the ack deadline and trigger a
+      # spurious redelivery. dev has no such traffic pattern to protect and
+      # was previously hardcoded to 1 regardless of environment, which meant
+      # it billed 24/7 whether or not anyone was actively testing.
+      min_instance_count = var.environment == "prod" ? 1 : 0
       max_instance_count = var.pii_ingestor_worker_max_instances
     }
   }
