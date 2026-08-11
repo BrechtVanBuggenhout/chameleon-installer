@@ -503,9 +503,9 @@ variable "pii_ingestor_worker_container_image" {
 }
 
 variable "pii_ingestor_worker_max_instances" {
-  description = "Maximum number of instances for the PII Ingestor Cloud Run worker."
+  description = "Maximum number of instances for the PII Ingestor Cloud Run worker. Combined with max_instance_request_concurrency=4 (pii_ingestor_worker.tf), this bounds worst-case concurrent pii_vault load jobs at instances*4 -- lowered from 10 to 5 (20 concurrent writers instead of 40) after that concurrency cap alone still left enough concurrent writers against the single shared pii_vault table to trip BigQuery's per-table write-rate quota (429 rateLimitExceeded, confirmed against a real sync)."
   type        = number
-  default     = 10
+  default     = 5
 }
 
 variable "data_plane_url" {

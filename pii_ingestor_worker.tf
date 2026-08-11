@@ -368,6 +368,17 @@ resource "google_pubsub_subscription" "pii_vault_sync_chunk_worker_push" {
   }
 
   ack_deadline_seconds = 300
+
+  # Without this, a 500 (process_chunk's generic error handler, including a
+  # BigQuery 429) triggers Pub/Sub's default immediate redelivery -- hammering
+  # the same rate-limited pii_vault table again right away instead of backing
+  # off. Complements process_chunk's own in-process retry (pii_vault_sync.py)
+  # as a net for whatever that doesn't catch, e.g. an instance recycling
+  # mid-request.
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
 }
 
 # IAM: Allow Pub/Sub to invoke the Ingestor Worker

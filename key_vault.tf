@@ -900,6 +900,14 @@ resource "google_cloud_run_v2_service" "key_vault" {
           cpu    = "1"
           memory = "512Mi"
         }
+        # Cloud Run v2 defaults to throttling CPU down once a response is
+        # sent (cpu_idle = true). Key Vault fires the deletion cascade
+        # (janitor SaaS wipes + REDACT_IN_PLACE) as unawaited background
+        # work after the triggering HTTP request already returned -- under
+        # the default, that work can get CPU-starved mid-flight with zero
+        # error and zero log line, which looks exactly like "it just times
+        # out." Keep CPU allocated for the life of the instance instead.
+        cpu_idle = false
       }
 
       startup_probe {
