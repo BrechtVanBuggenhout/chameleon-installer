@@ -29,6 +29,15 @@ resource "google_secret_manager_secret_iam_member" "pii_ingestor_worker_vault_ap
   member    = "serviceAccount:${google_service_account.pii_ingestor_worker.email}"
 }
 
+# IAM: Worker can read the PII registry write token (separate secret from
+# vault_api_key above -- see PII_REGISTRY_WRITE_TOKEN env below).
+resource "google_secret_manager_secret_iam_member" "pii_ingestor_worker_pii_registry_write_token" {
+  count     = var.enable_pii_ingestor_worker ? 1 : 0
+  secret_id = google_secret_manager_secret.pii_registry_write_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.pii_ingestor_worker.email}"
+}
+
 resource "google_project_iam_member" "ingestor_firestore" {
   project = var.gcp_project_id
   role    = "roles/datastore.user"
@@ -214,6 +223,22 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.vault_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+      # Separate from VAULT_API_TOKEN above -- gates the PII registry's own
+      # write routes (mark-synced, mark-sync-attempted, sync-runs/*), which
+      # requireWriteAuth checks independently of the general VAULT_API_KEY
+      # hook (see chameleon-key-vault's pii-registry.ts/sync-runs.ts). The
+      # worker's VaultClient previously only ever sent VAULT_API_TOKEN on
+      # every call, which Key Vault's requireWriteAuth doesn't accept -- every
+      # one of these calls had been silently 401ing.
+      env {
+        name = "PII_REGISTRY_WRITE_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.pii_registry_write_token.secret_id
             version = "latest"
           }
         }
