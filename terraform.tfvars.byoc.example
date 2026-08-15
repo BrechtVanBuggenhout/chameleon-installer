@@ -30,13 +30,12 @@ gcs_storage_class = "STANDARD"
 audit_log_retention_days = 2555
 audit_log_retention_lock = false
 
-# Pin these to a real released version once Chameleon has granted your
-# project's runtime service accounts reader access to its image registries
-# (part of onboarding — see INSTALL.md). Placeholders let a first apply
-# succeed before that.
-key_vault_container_image           = "us-docker.pkg.dev/cloudrun/container/hello"
-pii_ingestor_worker_container_image = "us-docker.pkg.dev/cloudrun/container/hello"
-console_image                       = "us-docker.pkg.dev/cloudrun/container/hello"
+# No need to set these -- they default to Chameleon's own public GHCR
+# images (see variables.tf), no GCP IAM grant required to pull them. Once
+# you've bootstrapped, run ./scripts/update.sh whenever Chameleon publishes
+# a new release; it pins these to a specific version for you (writing
+# platform_version.auto.tfvars) instead of floating on :latest forever.
+# Only override manually if you're self-building instead (build-own-images.sh).
 
 key_vault_artifact_repository_id = "key-vault"
 key_vault_firestore_collection   = "key_registry"

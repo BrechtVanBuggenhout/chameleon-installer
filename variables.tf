@@ -307,15 +307,30 @@ variable "key_vault_deployer_service_account_id" {
 }
 
 variable "key_vault_container_image" {
-  description = "Initial container image for Key Vault Cloud Run. Override with the app image after the first push."
+  description = "Key Vault container image. Defaults to Chameleon's own public GHCR image (no GCP IAM grant needed to pull it -- see INSTALL.md). scripts/update.sh bumps this to a specific version tag on update; override manually if you're self-building instead (see build-own-images.sh)."
   type        = string
-  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+  default     = "ghcr.io/brechtvanbuggenhout/chameleon-vault:latest"
 }
 
 variable "console_image" {
-  description = "Container image for the console Cloud Run service (see Phase 4 / chameleon-console's Dockerfile). Override with a real published tag; the placeholder just lets a fresh apply succeed before the first image push."
+  description = "Container image for the console Cloud Run service (see Phase 4 / chameleon-console's Dockerfile). Defaults to Chameleon's own public GHCR image -- see key_vault_container_image's description for the same rationale."
   type        = string
-  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+  default     = "ghcr.io/brechtvanbuggenhout/chameleon-console:latest"
+}
+
+# The version tag (e.g. "v2026.08.20") this deployment is pinned to --
+# distinct from the *_container_image variables above (which carry the
+# actual pull reference) so the running app can report its own version
+# without parsing an image string. Bumped in lockstep with those variables
+# by scripts/update.sh's git merge. Passed to the PII ingestor worker as
+# PLATFORM_VERSION (pii_ingestor_worker.tf) for the update-availability
+# check (chameleon-data-pipelines' source_staleness.py) -- null on
+# deployments that predate versioned images, which the check reports as
+# "unknown" rather than a false "stale".
+variable "platform_version" {
+  description = "Version tag this deployment is pinned to (e.g. \"v2026.08.20\"), bumped by scripts/update.sh. Null means unpinned/self-built -- the update-availability check reports 'unknown' rather than guessing."
+  type        = string
+  default     = null
 }
 
 # Minted by chameleon-onboarding at signup time (see that repo's
@@ -503,9 +518,9 @@ variable "enable_pii_audit_mirror" {
 # in this file.
 
 variable "pii_ingestor_worker_container_image" {
-  description = "Container image for the PII Ingestor Cloud Run worker."
+  description = "Container image for the PII Ingestor Cloud Run worker. Defaults to Chameleon's own public GHCR image -- see key_vault_container_image's description for the same rationale."
   type        = string
-  default     = "gcr.io/cloudrun/hello" # Placeholder, replace with actual image
+  default     = "ghcr.io/brechtvanbuggenhout/chameleon-pii-ingestor:latest"
 }
 
 variable "pii_ingestor_worker_max_instances" {

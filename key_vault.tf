@@ -555,12 +555,18 @@ resource "google_cloud_run_v2_service" "key_vault" {
   deletion_protection = var.environment == "prod"
 
   lifecycle {
-    # Image is managed by the Deploy workflow (GitHub Actions), not Terraform.
-    # Terraform controls config; the deploy workflow owns which image is live.
+    # image is now Terraform-managed (key_vault_container_image), unlike
+    # earlier -- it used to be excluded here for build-own-images.sh's
+    # out-of-band redeploys, but the update flow (scripts/update.sh) now
+    # changes the image only via a git-merged Terraform variable, so
+    # Terraform state is the real source of truth for what's deployed.
+    # Self-build customers using build-own-images.sh directly will see
+    # this as drift on their next `terraform apply` -- expected, since
+    # that path deliberately doesn't go through Terraform for the image.
+    #
     # scaling fields (min_instance_count=0) are written by gcloud run deploy as explicit zeros;
     # Terraform treats omitted vs 0 as equivalent, so ignore to avoid perpetual drift.
     ignore_changes = [
-      template[0].containers[0].image,
       scaling,
     ]
   }

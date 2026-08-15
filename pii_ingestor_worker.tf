@@ -243,6 +243,18 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
           }
         }
       }
+      # Powers the update-availability check (source_staleness.py) --
+      # compared against chameleon-installer's latest GitHub Release. Null
+      # (omitted entirely) on deployments that predate versioned images;
+      # the check reports "unknown" rather than a false "stale" for those.
+      dynamic "env" {
+        for_each = var.platform_version != null ? [1] : []
+        content {
+          name  = "PLATFORM_VERSION"
+          value = var.platform_version
+        }
+      }
+
       # Warehouse metadata discovery scope. The app's config.py defaults point at the
       # DEV project, so without these the prod worker crawls dev and 403s.
       env {
@@ -349,8 +361,10 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
   })
 
   lifecycle {
+    # Same rationale as key_vault's Cloud Run block: image is now
+    # Terraform-managed (see that block's comment for why); scaling stays
+    # ignored (gcloud writes explicit zeros Terraform treats as drift).
     ignore_changes = [
-      template[0].containers[0].image,
       scaling,
     ]
   }

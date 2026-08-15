@@ -127,10 +127,10 @@ resource "google_cloud_run_v2_service" "console" {
   deletion_protection = var.environment == "prod"
 
   lifecycle {
-    # Same rationale as key_vault's Cloud Run block: image/scaling are
-    # managed outside Terraform (deploy tooling / gcloud), not here.
+    # Same rationale as key_vault's Cloud Run block: image is now
+    # Terraform-managed (see that block's comment for why); scaling stays
+    # ignored (gcloud writes explicit zeros Terraform treats as drift).
     ignore_changes = [
-      template[0].containers[0].image,
       scaling,
     ]
   }
