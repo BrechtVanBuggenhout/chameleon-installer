@@ -120,6 +120,19 @@ variable "warehouse_discovery_project_id" {
   default     = null
 }
 
+# Manually-declared resources (Declare panel -> REDACT_IN_PLACE, SHADOW_COPY)
+# already address tables as a full bigquery:project.dataset.table string in
+# code (see chameleon-key-vault's parseBigQueryResourceId) -- Key Vault's
+# BigQuery client just needs IAM on whatever project that string names. This
+# is deliberately separate from warehouse_discovery_project_id above: that's
+# for *automatic* discovery/sync (still single-project, its own larger
+# feature), this is only for tables someone declares by hand.
+variable "additional_source_projects" {
+  description = "Extra GCP project IDs (beyond gcp_project_id) that manually-declared PII resources may live in. Key Vault's service account gets the same schema-read and source-redaction grants on each of these as it already has on gcp_project_id itself -- no new container image needed, this is IAM-only. Each project must already have the BigQuery API enabled (not managed by this Terraform config, since it may not be a project this config owns)."
+  type        = set(string)
+  default     = []
+}
+
 variable "warehouse_discovery_dataset_ids" {
   description = "Explicit BigQuery dataset IDs that the data pipeline service account may inspect for warehouse metadata discovery."
   type        = set(string)

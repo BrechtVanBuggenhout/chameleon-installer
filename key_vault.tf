@@ -493,6 +493,16 @@ resource "google_project_iam_member" "key_vault_bigquery_metadata_viewer" {
   member  = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# Same grant, extended to var.additional_source_projects -- see that
+# variable's own comment in variables.tf for why this is IAM-only and needs
+# no new container image.
+resource "google_project_iam_member" "key_vault_bigquery_metadata_viewer_additional" {
+  for_each = var.additional_source_projects
+  project  = each.value
+  role     = "roles/bigquery.metadataViewer"
+  member   = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # IAM: Key Vault writes application logs to Cloud Logging.
 resource "google_project_iam_member" "key_vault_logging" {
   project = var.gcp_project_id

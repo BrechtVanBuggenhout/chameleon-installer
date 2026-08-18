@@ -69,6 +69,15 @@ enable_terraform_github_actions_identities = false
 # in the data-pipelines service) — leave commented out otherwise.
 # warehouse_discovery_dataset_ids = ["your_dataset"]
 
+# Only relevant if you manually declare a PII resource (Registry -> Declare)
+# that lives in a GCP project other than this deployment's own gcp_project_id
+# — e.g. redacting/decrypting a table in a second project without a whole
+# separate Chameleon install. No new images needed, just IAM: each project
+# listed here gets the same schema-read + source-redaction grants Key Vault
+# already has on gcp_project_id. Each must already have the BigQuery API
+# enabled. Leave commented out otherwise.
+# additional_source_projects = ["your-other-project-id"]
+
 # Only relevant if the chameleon_pii dbt package builds its registry/lineage
 # tables into Snowflake instead of (or in addition to) BigQuery. Leave
 # commented out to keep Key Vault reading BigQuery only. The password is set

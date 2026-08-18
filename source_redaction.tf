@@ -51,3 +51,18 @@ resource "google_project_iam_member" "key_vault_source_redaction_operator" {
   role    = google_project_iam_custom_role.source_redaction_operator.name
   member  = "serviceAccount:${google_service_account.key_vault.email}"
 }
+
+# Same custom role, granted in var.additional_source_projects too -- a
+# custom role's fully-qualified name (.name below) can be referenced in an
+# IAM binding on a different project than the one that defines it, so this
+# doesn't need to redefine the role per-project. Resolves the "only covers
+# THIS GCP project" limitation stated in this file's own comment above, for
+# customers who declare a resource in more than one of their own projects
+# but still want it served by this one Key Vault deployment/image -- see
+# variables.tf's additional_source_projects for the full reasoning.
+resource "google_project_iam_member" "key_vault_source_redaction_operator_additional" {
+  for_each = var.additional_source_projects
+  project  = each.value
+  role     = google_project_iam_custom_role.source_redaction_operator.name
+  member   = "serviceAccount:${google_service_account.key_vault.email}"
+}
