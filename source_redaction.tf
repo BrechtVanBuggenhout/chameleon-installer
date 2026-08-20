@@ -20,6 +20,12 @@
 # least-privilege convention (see decrypted_views.tf's decryptedViewsOperator
 # custom role for the same pattern).
 #
+# bigquery.tables.update (schema/metadata patch) is distinct from
+# bigquery.tables.updateData (row-level DML/streaming writes) above --
+# needed for ensureEncryptedCopyTable()'s ALTER TABLE ADD COLUMN when a
+# customer adds a new declared field to an already-existing ENCRYPTED_COPY
+# table.
+#
 # bigquery.tables.getData is required alongside updateData: REDACT_IN_PLACE's
 # UPDATE has a real WHERE clause (userId/tenantId), and BigQuery must read
 # matching rows to evaluate it before writing NULLs -- get (metadata only)
@@ -36,12 +42,13 @@
 resource "google_project_iam_custom_role" "source_redaction_operator" {
   role_id     = "sourceRedactionOperator_${local.instance_short}"
   title       = "Source Redaction Operator (${local.instance_name})"
-  description = "Minimum BigQuery permissions for Key Vault to run REDACT_IN_PLACE or maintain a SHADOW_COPY view on a manually-declared resource"
+  description = "Minimum BigQuery permissions for Key Vault to run REDACT_IN_PLACE, maintain a SHADOW_COPY view, or maintain an ENCRYPTED_COPY table on a manually-declared resource"
   permissions = [
     "bigquery.tables.get",
     "bigquery.tables.getData",
     "bigquery.tables.create",
     "bigquery.tables.delete",
+    "bigquery.tables.update",
     "bigquery.tables.updateData",
   ]
 }
