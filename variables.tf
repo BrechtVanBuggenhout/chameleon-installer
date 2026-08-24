@@ -440,6 +440,18 @@ variable "enable_pii_ingestor_worker" {
   default     = false
 }
 
+# Separate opt-in from enable_pii_ingestor_worker above, deliberately --
+# this provisions a genuinely new, publicly-reachable service (see
+# pii_pubsub_ingest_worker.tf's own docs for why it can't be a route on the
+# existing, IAM-gated worker instead). An existing deployment with
+# enable_pii_ingestor_worker = true should never silently gain a new public
+# endpoint on its next apply just because that var was already true.
+variable "enable_pii_pubsub_ingest_worker" {
+  description = "Enable the Pub/Sub Ingest Cloud Run worker -- a publicly-reachable push endpoint for customer-owned Pub/Sub topics declared as system: 'pubsub' PII resources. Real authorization is entirely app-level (per-resource allowed-caller service account, see pii_pubsub_ingest_worker.tf), not Cloud Run IAM invoker."
+  type        = bool
+  default     = false
+}
+
 # Decentralized decrypted views (see decrypted_views.tf)
 variable "enable_decrypted_views" {
   description = "Enable customer-declared BigQuery Authorized Views that live-decrypt PII at query time via a Remote Function, without ever materializing plaintext. Requires key_vault_allow_unauthenticated = false (enforced by a check block in decrypted_views.tf)."
@@ -538,6 +550,12 @@ variable "pii_ingestor_worker_container_image" {
 
 variable "pii_ingestor_worker_max_instances" {
   description = "Maximum number of instances for the PII Ingestor Cloud Run worker. Combined with max_instance_request_concurrency=4 (pii_ingestor_worker.tf), this bounds worst-case concurrent pii_vault load jobs at instances*4 -- lowered from 10 to 5 (20 concurrent writers instead of 40) after that concurrency cap alone still left enough concurrent writers against the single shared pii_vault table to trip BigQuery's per-table write-rate quota (429 rateLimitExceeded, confirmed against a real sync)."
+  type        = number
+  default     = 5
+}
+
+variable "pii_pubsub_ingest_worker_max_instances" {
+  description = "Maximum number of instances for the Pub/Sub Ingest Cloud Run worker. Kept modest -- unlike the main ingestor worker, traffic here is one customer CDC/binlog stream's push volume, not a fan-out of hundreds of chunk messages at once."
   type        = number
   default     = 5
 }
