@@ -341,12 +341,15 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
       }
     }
     scaling {
-      # prod keeps one warm instance -- a cold start on this service's Pub/Sub
-      # push subscription can otherwise blow the ack deadline and trigger a
-      # spurious redelivery. dev has no such traffic pattern to protect and
-      # was previously hardcoded to 1 regardless of environment, which meant
-      # it billed 24/7 whether or not anyone was actively testing.
-      min_instance_count = var.environment == "prod" ? 1 : 0
+      # Zero in every environment until there's a real customer -- this was
+      # silently costing money 24/7 in prod for no reason (confirmed live:
+      # zero real traffic, nothing to keep warm for). Previously kept prod
+      # at 1 specifically to avoid a cold start blowing this service's
+      # Pub/Sub push subscription's ack deadline (triggering a spurious
+      # redelivery) -- that's a real concern, but only once real traffic
+      # exists to actually hit it. Flip back to 1 for prod deliberately
+      # once onboarding a real customer, not before.
+      min_instance_count = 0
       max_instance_count = var.pii_ingestor_worker_max_instances
     }
   }

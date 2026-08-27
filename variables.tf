@@ -538,6 +538,12 @@ variable "enable_pii_audit_mirror" {
   default     = false
 }
 
+variable "enable_jwks_mirror" {
+  description = "Set GITHUB_ACTIONS_DISPATCH_TOKEN so signing-key rotation dispatches publish-jwks-snapshot.yml, publishing a JWKS snapshot to the public chameleon-vault repo on every rotation. Only meaningful for deployments that also mirror chameleon-key-vault's source to a public repo (see sync-public-vault.yml) -- self-hosted/BYOC deployments with no public mirror should leave this off."
+  type        = bool
+  default     = false
+}
+
 # All pii_registry_snowflake_*, pii_warehouse_type, and pii_ingestor_snowflake_*
 # variables live in snowflake.tf, kept apart from the BigQuery/GCP variables
 # in this file.

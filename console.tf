@@ -144,7 +144,11 @@ resource "google_cloud_run_v2_service" "console" {
     })
 
     scaling {
-      min_instance_count = var.environment == "prod" ? 1 : 0
+      # Zero in every environment until there's a real customer -- this was
+      # silently costing money 24/7 in prod for no reason (confirmed live:
+      # zero real traffic, nothing to keep warm for). Flip back to 1 for
+      # prod deliberately once onboarding a real customer, not before.
+      min_instance_count = 0
       max_instance_count = var.environment == "prod" ? 10 : 3
     }
 
@@ -169,6 +173,20 @@ resource "google_cloud_run_v2_service" "console" {
       env {
         name  = "NEXT_PUBLIC_TENANT_ID"
         value = local.tenant_id
+      }
+
+      # Deliberately not NEXT_PUBLIC_-prefixed -- read server-side only
+      # (lib/pubsub-ingest.ts) and threaded down as a prop into the
+      # client-side declare panel, since this repo's CI never passes env
+      # vars at Docker build time and Next.js only inlines NEXT_PUBLIC_*
+      # at build time (a runtime-only Cloud Run env var by that name would
+      # never actually reach the browser). Empty when the worker isn't
+      # enabled (e.g. prod today) -- the declare panel already handles
+      # that gracefully, shown as "not configured for this console"
+      # instead of a broken URL.
+      env {
+        name  = "PUBSUB_INGEST_BASE_URL"
+        value = var.enable_pii_pubsub_ingest_worker ? google_cloud_run_v2_service.pii_pubsub_ingest_worker[0].uri : ""
       }
 
       env {

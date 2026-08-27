@@ -401,6 +401,42 @@ resource "google_secret_manager_secret_iam_member" "key_vault_hubspot_secret" {
   member    = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# GitHub PAT letting Key Vault dispatch publish-jwks-snapshot.yml in its own
+# (private) repo after a signing-key rotation. Deliberately a separate,
+# narrower credential from PUBLIC_VAULT_PUSH_TOKEN (which only has
+# Contents: read/write on the public chameleon-vault repo, not Actions:write
+# on this private one) -- fine-grained PAT scoped to chameleon-key-vault
+# only, permissions Actions: write + Metadata: read. Terraform can't mint a
+# GitHub PAT, so this follows the same manually-managed placeholder pattern
+# as hubspot_api_key/salesforce_api_key above: set/rotate via
+# `gcloud secrets versions add github-actions-dispatch-token-<instance>`.
+resource "google_secret_manager_secret" "github_actions_dispatch_token" {
+  secret_id = "github-actions-dispatch-token-${local.instance_name}"
+
+  replication {
+    auto {}
+  }
+
+  labels = merge(var.labels, {
+    component = "key-vault"
+    purpose   = "jwks-mirror-dispatch"
+  })
+}
+
+resource "google_secret_manager_secret_version" "github_actions_dispatch_token_version" {
+  secret      = google_secret_manager_secret.github_actions_dispatch_token.id
+  secret_data = "placeholder-github-actions-dispatch-token"
+
+  lifecycle { ignore_changes = [secret_data] }
+}
+
+resource "google_secret_manager_secret_iam_member" "key_vault_github_dispatch_token" {
+  count     = var.enable_jwks_mirror ? 1 : 0
+  secret_id = google_secret_manager_secret.github_actions_dispatch_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "key_vault_salesforce_secret" {
   secret_id = google_secret_manager_secret.salesforce_api_key.id
   role      = "roles/secretmanager.secretAccessor"
@@ -590,7 +626,11 @@ resource "google_cloud_run_v2_service" "key_vault" {
     })
 
     scaling {
-      min_instance_count = var.environment == "prod" ? 1 : 0
+      # Zero in every environment until there's a real customer -- this was
+      # silently costing money 24/7 in prod for no reason (confirmed live:
+      # zero real traffic, nothing to keep warm for). Flip back to 1 for
+      # prod deliberately once onboarding a real customer, not before.
+      min_instance_count = 0
       max_instance_count = var.environment == "prod" ? 10 : 3
     }
 
@@ -911,6 +951,23 @@ resource "google_cloud_run_v2_service" "key_vault" {
         value = "true"
       }
 
+      # Omitted entirely when disabled -- main.ts treats an unset
+      # GITHUB_ACTIONS_DISPATCH_TOKEN as "JWKS mirror feature off," never
+      # constructing a GithubActionsClient, so signing-key rotation simply
+      # no-ops this step rather than failing.
+      dynamic "env" {
+        for_each = var.enable_jwks_mirror ? [1] : []
+        content {
+          name = "GITHUB_ACTIONS_DISPATCH_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.github_actions_dispatch_token.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+
       resources {
         limits = {
           cpu    = "1"
@@ -978,7 +1035,9 @@ resource "google_cloud_run_v2_service" "key_vault" {
     google_secret_manager_secret_version.hubspot_api_key_version,
     google_secret_manager_secret_version.salesforce_api_key_version,
     google_secret_manager_secret_iam_member.key_vault_snowflake_secret,
-    google_secret_manager_secret_version.pii_registry_snowflake_password_version
+    google_secret_manager_secret_version.pii_registry_snowflake_password_version,
+    google_secret_manager_secret_version.github_actions_dispatch_token_version,
+    google_secret_manager_secret_iam_member.key_vault_github_dispatch_token,
   ]
 }
 
