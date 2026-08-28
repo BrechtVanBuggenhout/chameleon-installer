@@ -544,6 +544,18 @@ variable "enable_jwks_mirror" {
   default     = false
 }
 
+variable "tsa_enabled" {
+  description = "Enable RFC 3161 trusted timestamping on issued Certificates of Destruction (TSA_ENABLED). Off by default -- this is a new, always-in-the-critical-path dependency on a free, no-SLA third-party Timestamp Authority, awaited synchronously on the real POST /deletion-requests/:id/advance path. Never blocks or fails issuance either way (see CertificateService.issueAndStoreCertificate), only adds bounded latency when on."
+  type        = bool
+  default     = false
+}
+
+variable "tsa_url" {
+  description = "RFC 3161 Timestamp Authority endpoint (TSA_URL). Null uses the app's own default (https://freetsa.org/tsr). Only meaningful when tsa_enabled is true."
+  type        = string
+  default     = null
+}
+
 # All pii_registry_snowflake_*, pii_warehouse_type, and pii_ingestor_snowflake_*
 # variables live in snowflake.tf, kept apart from the BigQuery/GCP variables
 # in this file.

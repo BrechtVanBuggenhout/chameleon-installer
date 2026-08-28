@@ -968,6 +968,22 @@ resource "google_cloud_run_v2_service" "key_vault" {
         }
       }
 
+      # RFC 3161 trusted timestamping -- opt-in, plain (non-secret) values.
+      # main.ts treats TSA_ENABLED != "true" as "feature off" regardless of
+      # whether TSA_URL is set, never constructing a TsaClient.
+      env {
+        name  = "TSA_ENABLED"
+        value = var.tsa_enabled ? "true" : "false"
+      }
+
+      dynamic "env" {
+        for_each = var.tsa_url != null ? [1] : []
+        content {
+          name  = "TSA_URL"
+          value = var.tsa_url
+        }
+      }
+
       resources {
         limits = {
           cpu    = "1"
