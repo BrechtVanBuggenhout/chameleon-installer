@@ -556,6 +556,18 @@ variable "tsa_url" {
   default     = null
 }
 
+variable "rekor_publishing_enabled" {
+  description = "Publish {certificateHash, previousCertificateHash} to a public Sigstore Rekor transparency log on every certificate issuance (REKOR_ENABLED). Off by default, same reasoning as tsa_enabled -- a new dependency on a free, no-SLA third-party service. Awaited synchronously alongside the TSA step, never blocks or fails issuance. Requires a dedicated EC_SIGN_P256_SHA256 KMS key (see google_kms_crypto_key.rekor_signing_key) -- the existing certificate-signing key can't be reused, since it's RSA_SIGN_PSS_2048_SHA256 and Rekor's hashedrekord type rejects PSS-padded signatures (confirmed against the real public Rekor API, 2026-08-29)."
+  type        = bool
+  default     = false
+}
+
+variable "rekor_url" {
+  description = "Sigstore Rekor transparency log endpoint (REKOR_URL). Null uses the app's own default (https://rekor.sigstore.dev). Only meaningful when rekor_publishing_enabled is true."
+  type        = string
+  default     = null
+}
+
 # All pii_registry_snowflake_*, pii_warehouse_type, and pii_ingestor_snowflake_*
 # variables live in snowflake.tf, kept apart from the BigQuery/GCP variables
 # in this file.

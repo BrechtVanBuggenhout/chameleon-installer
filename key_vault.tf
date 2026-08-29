@@ -217,6 +217,54 @@ resource "google_kms_crypto_key_iam_member" "key_vault_signing_rotator" {
   member        = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
+# Dedicated key for publishing {certificateHash, previousCertificateHash} to
+# the public Sigstore Rekor transparency log (see rekor_publishing_enabled).
+# Deliberately a SEPARATE key from certificate_signing_key above, not a reuse
+# -- confirmed live against the real Rekor API (2026-08-29) that its
+# hashedrekord entry type rejects RSA-PSS signatures ("crypto/rsa:
+# verification error", Go's PKCS1v15-specific error string, on every PSS
+# attempt) but accepts ECDSA P-256 cleanly. certificate_signing_key is
+# RSA_SIGN_PSS_2048_SHA256 by design (matches the JWT's PS256 header) and
+# that purpose is fixed at creation -- it cannot produce PKCS1v15 or ECDSA
+# signatures, so a second key is the only option, not a workaround.
+resource "google_kms_crypto_key" "rekor_signing_key" {
+  count    = var.rekor_publishing_enabled ? 1 : 0
+  name     = "chameleon-rekor-signing-${local.instance_name}"
+  key_ring = google_kms_key_ring.signing.id
+  purpose  = "ASYMMETRIC_SIGN"
+
+  version_template {
+    algorithm        = "EC_SIGN_P256_SHA256"
+    protection_level = "SOFTWARE"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  labels = merge(var.labels, {
+    component = "key-vault"
+    purpose   = "rekor-transparency-log-signing"
+  })
+}
+
+resource "google_kms_crypto_key_iam_member" "key_vault_rekor_signing_kms" {
+  count         = var.rekor_publishing_enabled ? 1 : 0
+  crypto_key_id = google_kms_crypto_key.rekor_signing_key[0].id
+  role          = "roles/cloudkms.signerVerifier"
+  member        = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
+# Same reasoning as key_vault_signing_viewer above -- needed to resolve
+# "current" as the newest ENABLED version (no primary-version concept for
+# ASYMMETRIC_SIGN keys).
+resource "google_kms_crypto_key_iam_member" "key_vault_rekor_signing_viewer" {
+  count         = var.rekor_publishing_enabled ? 1 : 0
+  crypto_key_id = google_kms_crypto_key.rekor_signing_key[0].id
+  role          = "roles/cloudkms.viewer"
+  member        = "serviceAccount:${google_service_account.key_vault.email}"
+}
+
 # IAM: Key Vault can read/write Firestore (public ledger + user key registry)
 resource "google_project_iam_member" "key_vault_firestore" {
   project = var.gcp_project_id
@@ -981,6 +1029,30 @@ resource "google_cloud_run_v2_service" "key_vault" {
         content {
           name  = "TSA_URL"
           value = var.tsa_url
+        }
+      }
+
+      # Rekor transparency-log publishing -- opt-in, same shape as TSA above.
+      # main.ts treats REKOR_ENABLED != "true" as "feature off" regardless of
+      # whether the key name / URL are set, never constructing a RekorClient.
+      env {
+        name  = "REKOR_ENABLED"
+        value = var.rekor_publishing_enabled ? "true" : "false"
+      }
+
+      dynamic "env" {
+        for_each = var.rekor_publishing_enabled ? [1] : []
+        content {
+          name  = "CLOUD_KMS_REKOR_SIGNING_KEY_NAME"
+          value = google_kms_crypto_key.rekor_signing_key[0].name
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.rekor_url != null ? [1] : []
+        content {
+          name  = "REKOR_URL"
+          value = var.rekor_url
         }
       }
 
