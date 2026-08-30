@@ -595,3 +595,26 @@ variable "data_plane_url" {
   type        = string
   default     = ""
 }
+
+# TEE attestation, Phase 2b (chameleon-paper/TEE_ATTESTATION_PLAN.md) -- see
+# certificate-signer-tee.tf. Off by default, same posture as
+# rekor_publishing_enabled: new infra, not yet load-bearing for anything
+# (certificate_signing_key's IAM is still fully held by key_vault's own SA
+# until Phase 2c's cutover, deliberately not part of this).
+variable "certificate_signer_tee_enabled" {
+  description = "Provision the GCP Confidential Space deployment of certificate-signer (a real Confidential VM, a Workload Identity Pool scoped to its attested image digest, and KMS/Firestore IAM granted to that identity instead of key_vault's SA). Off by default -- purely additive infra, no impact on the existing Cloud Run service until Phase 2c explicitly wires the orchestrator to call it."
+  type        = bool
+  default     = false
+}
+
+variable "certificate_signer_tee_hostname" {
+  description = "Public hostname the certificate-signer TEE is reachable at, used only as the expected audience for the ID tokens key_vault presents to it (ID_TOKEN_AUDIENCE metadata) -- this variable does not create any DNS record itself. Per the Phase 2 networking decision, the real hostname is a subdomain of chameleon-data.com (Cloudflare-proxied, not a GCP load balancer); pointing that subdomain's DNS at this VM's static IP is a manual, explicitly-confirmed step outside this repo's Terraform, done separately from any `terraform apply` here."
+  type        = string
+  default     = "certificate-signer.chameleon-data.com"
+}
+
+variable "certificate_signer_tee_image_digest" {
+  description = "Digest-pinned image reference for the certificate-signer TEE workload (e.g. REGION-docker.pkg.dev/PROJECT/REPO/certificate-signer@sha256:...), consumed by google_compute_instance.certificate_signer_tee's tee-image-reference metadata. Populated by chameleon-key-vault's verify-certificate-signer-reproducible.yml push-image job on every merge to main (same CI-writes-a-GH-Actions-Variable pattern as key_vault_container_image/KEY_VAULT_IMAGE_DEV), never :latest -- Confidential Space attestation measures this exact digest, and IAM below is scoped to it specifically. Null (and certificate_signer_tee_enabled left false) until that pipeline has run at least once."
+  type        = string
+  default     = null
+}
