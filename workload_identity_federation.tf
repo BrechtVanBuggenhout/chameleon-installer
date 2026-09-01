@@ -60,10 +60,14 @@ resource "google_service_account" "github_actions_prod" {
   account_id = "${var.app_name}-github-actions-prod"
 }
 
-# IAM bindings for GHA service accounts are managed outside Terraform via gcloud.
-# The GHA SA runs as roles/editor which cannot call setIamPolicy on the project,
-# so any google_project_iam_member for these SAs would always fail in CI.
-# Grants are applied once by the project owner and documented in /docs/gha-permissions.md.
+# IAM bindings for GHA service accounts are managed outside Terraform via
+# gcloud, not via google_project_iam_member here: none of the roles these
+# SAs hold include resourcemanager.projects.setIamPolicy (confirmed against
+# the real predefined-role permission lists, including roles/editor, which
+# neither SA has held since 2026-08-31 -- see below), so a
+# google_project_iam_member targeting either SA's own bindings would always
+# fail in CI. Grants are applied once by the project owner; the exact
+# current role list for both SAs is documented in docs/gha-permissions.md.
 
 # Tell Terraform to drop these resources from state without destroying them in GCP.
 # They were previously managed here but cannot be destroyed by the GHA SA.
