@@ -867,6 +867,19 @@ resource "google_cloud_run_v2_service" "key_vault" {
         }
       }
 
+      # Unconditional, unlike PII_VAULT_RESOURCE_ID above -- this is a passive
+      # read of a dbt-created table (chameleon-pii-dbt's Stage 2 content
+      # scanner, see that package's pii_content_scan_enabled var, itself off
+      # by default), not a feature that provisions any infra of its own.
+      # Key Vault's own PiiContentFindingsLookupService already degrades
+      # gracefully (empty findings, logged, non-fatal) if the table doesn't
+      # exist yet or content scanning has never been turned on -- no
+      # Terraform-level toggle needed to match that.
+      env {
+        name  = "PII_CONTENT_FINDINGS_RESOURCE_ID"
+        value = "bigquery:${var.gcp_project_id}.${google_bigquery_dataset.chameleon.dataset_id}.pii_content_findings"
+      }
+
       # Omitted entirely when key_vault_auth_bypass_enabled is true — Key
       # Vault's own code (main.ts) runs with NO auth check when this env var
       # is absent. Guarded to dev tier only by the variable's own validation.
