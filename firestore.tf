@@ -61,6 +61,28 @@ resource "google_firestore_index" "deletion_requests_query" {
   }
 }
 
+# Firestore Composite Index for the deletion-evidence period rollup
+# (GET /audit/deletion-evidence): tenant_id equality + a created_at range,
+# ordered desc -- confirmed live that this exact shape needs its own
+# composite index, distinct from deletion_requests_query above (that one's
+# equality set is user_id+tenant_id+status, not tenant_id alone, so it
+# doesn't cover a tenant-wide date-range scan).
+resource "google_firestore_index" "deletion_requests_tenant_date_range" {
+  project    = var.gcp_project_id
+  database   = google_firestore_database.kms_registry.name
+  collection = "deletion_requests"
+
+  fields {
+    field_path = "tenant_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "created_at"
+    order      = "DESCENDING"
+  }
+}
+
 # Firestore Composite Index for User DEK Lookups
 resource "google_firestore_index" "user_keys_query" {
   project    = var.gcp_project_id
