@@ -454,7 +454,7 @@ variable "enable_pii_pubsub_ingest_worker" {
 
 # Decentralized decrypted views (see decrypted_views.tf)
 variable "enable_decrypted_views" {
-  description = "Enable customer-declared BigQuery Authorized Views that live-decrypt PII at query time via a Remote Function, without ever materializing plaintext. Requires key_vault_allow_unauthenticated = false (enforced by a check block in decrypted_views.tf)."
+  description = "Enable customer-declared BigQuery Authorized Views that live-decrypt PII at query time via a Remote Function, without ever materializing plaintext. Requires enable_pii_ingestor_worker = true (enforced by a lifecycle precondition in decrypted_views.tf) -- does NOT require key_vault_allow_unauthenticated = false; that hard requirement was deliberately relaxed 2026-08-02, see the connection resource's own doc comment in decrypted_views.tf for why."
   type        = bool
   default     = false
 }
