@@ -24,12 +24,19 @@ locals {
   decrypted_views_batch_decrypt_routine_id = "chameleon_batch_decrypt"
 
   # The identity terraform-apply.yml actually runs as for this environment.
-  # roles/editor (what this SA already holds project-wide) does not cover
-  # bigquery.datasets.update on a dataset's own legacy access[] array --
-  # confirmed for real: the first live apply of chameleon_authorizes_
-  # decrypted_views below failed with a 403 on exactly that permission,
-  # despite roles/editor. null-safe via try() since these WIF identities
-  # only exist when enable_terraform_github_actions_identities is on.
+  # The first live apply of chameleon_authorizes_decrypted_views below
+  # failed with a 403 on bigquery.datasets.update against a dataset's own
+  # legacy access[] array, despite roles/editor -- true at the time, but
+  # neither dev's nor prod's GHA deploy identity has held roles/editor
+  # since 2026-08-31 (see docs/gha-permissions.md). Confirmed via
+  # `gcloud iam roles describe roles/bigquery.admin` that the scoped-down
+  # role list's roles/bigquery.admin grant DOES include
+  # bigquery.datasets.update -- so the narrow dataOwner grant below is
+  # likely redundant with it today. Left in place rather than removed
+  # here: that would need a real terraform plan/apply to verify safely,
+  # out of scope for this comment fix. null-safe via try() since these WIF
+  # identities only exist when enable_terraform_github_actions_identities
+  # is on.
   terraform_deployer_email = (
     var.environment == "dev"
     ? try(google_service_account.github_actions_dev[0].email, null)
@@ -68,10 +75,13 @@ resource "google_bigquery_dataset" "decrypted_views" {
 }
 
 # google_bigquery_dataset_access (below) writes to the chameleon dataset's
-# own legacy access[] array, which needs bigquery.dataOwner-level rights --
-# roles/editor (what the deploy identity already holds project-wide) does
-# not include that. Narrow grant, scoped to just this one dataset, not a
-# project-wide dataOwner role.
+# own legacy access[] array, which needs bigquery.dataOwner-level rights.
+# Originally justified against roles/editor (which didn't cover it); the
+# GHA deploy identity hasn't held roles/editor since 2026-08-31 (see
+# docs/gha-permissions.md), and its current roles/bigquery.admin grant DOES
+# cover bigquery.datasets.update (confirmed via `gcloud iam roles describe`)
+# -- this narrow grant is likely now redundant with it, left in place
+# pending a real terraform plan/apply to verify removing it is safe.
 resource "google_bigquery_dataset_iam_member" "terraform_deployer_chameleon_owner" {
   count = (var.enable_decrypted_views && local.terraform_deployer_email != null) ? 1 : 0
 
@@ -80,10 +90,16 @@ resource "google_bigquery_dataset_iam_member" "terraform_deployer_chameleon_owne
   member     = "serviceAccount:${local.terraform_deployer_email}"
 }
 
-# google_bigquery_routine.batch_decrypt (below) needs bigquery.connections.delegate
-# on the connection it references -- also not covered by roles/editor.
-# Confirmed for real: creating the connection itself succeeded under
-# roles/editor, but referencing it from a routine 403'd separately.
+# google_bigquery_routine.batch_decrypt (below) needs
+# bigquery.connections.delegate on the connection it references.
+# Originally justified against roles/editor (creating the connection
+# succeeded under it, but referencing it from a routine 403'd separately);
+# the GHA deploy identity hasn't held roles/editor since 2026-08-31 (see
+# docs/gha-permissions.md), and its current roles/bigquery.admin grant DOES
+# cover bigquery.connections.delegate (confirmed via
+# `gcloud iam roles describe`) -- this narrow grant is likely now redundant
+# with it, left in place pending a real terraform plan/apply to verify
+# removing it is safe.
 resource "google_bigquery_connection_iam_member" "terraform_deployer_connection_admin" {
   count = (var.enable_decrypted_views && local.terraform_deployer_email != null) ? 1 : 0
 
