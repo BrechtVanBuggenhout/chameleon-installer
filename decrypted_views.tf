@@ -68,6 +68,35 @@ resource "google_bigquery_dataset" "decrypted_views" {
     component   = "decrypted-views"
   })
 
+  # Explicit ACL, replacing BigQuery's create-time default of OWNER/WRITER/
+  # READER -> the projectOwners/projectWriters/projectReaders special
+  # groups. Without this, ANY principal holding the basic roles/owner or
+  # roles/editor role at the PROJECT level -- not just something scoped to
+  # this dataset -- already gets direct query access to every declared
+  # decrypted view via that legacy default, completely bypassing the
+  # per-view consumerServiceAccount-only grant decrypted-view-service.ts
+  # otherwise applies carefully (see grantViewerOnView). Confirmed live
+  # against both dev and prod via `bq show`: that default ACL was present
+  # on both, unnoticed, since this resource never set `access` before.
+  #
+  # Key Vault's own runtime SA is the only principal that legitimately
+  # needs dataset-level access (CREATE/DROP VIEW DDL, per-view IAM grants
+  # -- see decrypted_views_operator below); moved here from what used to be
+  # a separate google_bigquery_dataset_iam_member resource, since that
+  # resource and this field manage the exact same underlying access list --
+  # leaving both in place would have Terraform fight itself on every apply,
+  # each one undoing the other's entry.
+  #
+  # Deliberately does NOT list any consumerServiceAccount here: per-view
+  # consumers are granted at the TABLE level only (grantViewerOnView), so
+  # a dataset-level entry for one would give it access to every view in
+  # this dataset, not just its own -- exactly the blast radius this
+  # feature exists to avoid.
+  access {
+    role          = google_project_iam_custom_role.decrypted_views_operator[0].name
+    user_by_email = google_service_account.key_vault.email
+  }
+
   depends_on = [
     google_project_service.bigquery,
     google_kms_crypto_key_iam_member.bigquery_service_agent_kms
@@ -230,9 +259,14 @@ resource "google_bigquery_connection" "decrypted_views" {
 # Least-privilege role for Key Vault's own CREATE VIEW / DROP VIEW DDL and
 # per-view IAM grants (application code in decrypted-view-service.ts, not
 # Terraform -- these are dynamically named, end-user-triggered resources
-# Terraform can't reconcile). Bound at the dataset level below via
-# google_bigquery_dataset_iam_member, not project-wide -- Key Vault's own SA
-# should not be able to touch tables outside this one dataset.
+# Terraform can't reconcile). Bound at the dataset level via the `access`
+# block on google_bigquery_dataset.decrypted_views above, not project-wide
+# -- Key Vault's own SA should not be able to touch tables outside this one
+# dataset. (Previously a separate google_bigquery_dataset_iam_member
+# resource here; folded into the dataset's own `access` block once that
+# field needed to be set anyway to drop the default projectOwners/Writers/
+# Readers ACL -- keeping both would have managed the same underlying list
+# from two places.)
 resource "google_project_iam_custom_role" "decrypted_views_operator" {
   count = var.enable_decrypted_views ? 1 : 0
 
@@ -248,14 +282,6 @@ resource "google_project_iam_custom_role" "decrypted_views_operator" {
     "bigquery.tables.getIamPolicy",
     "bigquery.tables.setIamPolicy",
   ]
-}
-
-resource "google_bigquery_dataset_iam_member" "key_vault_decrypted_views_operator" {
-  count = var.enable_decrypted_views ? 1 : 0
-
-  dataset_id = google_bigquery_dataset.decrypted_views[0].dataset_id
-  role       = google_project_iam_custom_role.decrypted_views_operator[0].name
-  member     = "serviceAccount:${google_service_account.key_vault.email}"
 }
 
 # The connection's own service account only needs to be able to call Key
