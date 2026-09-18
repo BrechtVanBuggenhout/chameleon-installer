@@ -97,6 +97,20 @@ resource "google_bigquery_dataset" "decrypted_views" {
     user_by_email = google_service_account.key_vault.email
   }
 
+  # Required, not optional: a dataset ACL update via this field is a full
+  # replacement, and the BigQuery API rejects one with no direct OWNER/
+  # roles/bigquery.dataOwner entry ("Dataset policy update failed (No
+  # owners specified)") -- confirmed live, this resource failed to apply
+  # without it. The deploy identity is the right (and only legitimate)
+  # owner here: still a single service account, not a special group, so it
+  # doesn't reopen the project-Owner/Editor bypass this change exists to
+  # close -- same pattern as terraform_deployer_chameleon_owner above for
+  # the CHAMELEON dataset.
+  access {
+    role          = "OWNER"
+    user_by_email = local.terraform_deployer_email
+  }
+
   depends_on = [
     google_project_service.bigquery,
     google_kms_crypto_key_iam_member.bigquery_service_agent_kms
