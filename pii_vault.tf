@@ -119,6 +119,7 @@ resource "google_cloud_scheduler_job" "pii_vault_sync" {
 
   depends_on = [
     google_project_service.cloudscheduler,
-    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker
+    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker,
+    google_service_account_iam_member.terraform_deployer_data_pipeline_actas,
   ]
 }

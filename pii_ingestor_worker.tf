@@ -380,6 +380,27 @@ resource "google_cloud_run_v2_service" "pii_ingestor_worker" {
   ]
 }
 
+# Creating (or updating) a push subscription whose oidc_token names a given
+# service account requires the CALLER -- the Terraform deploy identity here,
+# not the subscription's own runtime behavior -- to hold
+# iam.serviceAccounts.actAs on that SA. data_pipeline had no IAM policy at
+# all (confirmed via `gcloud iam service-accounts get-iam-policy`: fully
+# empty), which only actually broke an apply once a NEW push subscription
+# referencing it needed to be created for the first time -- most of the
+# subscriptions below were still only pending creates themselves at the
+# time this was found (only pii_vault_sync_chunk_worker_push already
+# existed live). Same "eventually consistent IAM" caveat as
+# decrypted_views.tf's own wait_for_iam_propagation: a fresh grant may not
+# have propagated by the time these are created in the same apply --
+# expect a possible one-time retry on first apply after this lands.
+resource "google_service_account_iam_member" "terraform_deployer_data_pipeline_actas" {
+  count = local.terraform_deployer_email != null ? 1 : 0
+
+  service_account_id = google_service_account.data_pipeline.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.terraform_deployer_email}"
+}
+
 # Updated: Pivot from Direct BQ to Cloud Run Worker Push
 resource "google_pubsub_subscription" "pii_ingestion_worker_push" {
   name  = "pii-ingestion-worker-sub-${local.instance_name}"
@@ -394,6 +415,8 @@ resource "google_pubsub_subscription" "pii_ingestion_worker_push" {
   }
 
   ack_deadline_seconds = 60
+
+  depends_on = [google_service_account_iam_member.terraform_deployer_data_pipeline_actas]
 }
 
 # Push subscription for pii_vault_sync_chunks -- each message is one chunk
@@ -426,6 +449,8 @@ resource "google_pubsub_subscription" "pii_vault_sync_chunk_worker_push" {
     minimum_backoff = "10s"
     maximum_backoff = "600s"
   }
+
+  depends_on = [google_service_account_iam_member.terraform_deployer_data_pipeline_actas]
 }
 
 # IAM: Allow Pub/Sub to invoke the Ingestor Worker
@@ -488,7 +513,8 @@ resource "google_cloud_scheduler_job" "warehouse_metadata_crawl" {
 
   depends_on = [
     google_project_service.cloudscheduler,
-    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker
+    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker,
+    google_service_account_iam_member.terraform_deployer_data_pipeline_actas,
   ]
 }
 
@@ -532,6 +558,7 @@ resource "google_cloud_scheduler_job" "source_staleness_check" {
     google_project_service.cloudscheduler,
     google_cloud_run_v2_service_iam_member.pubsub_worker_invoker,
     google_secret_manager_secret_iam_member.pii_ingestor_worker_source_shas,
+    google_service_account_iam_member.terraform_deployer_data_pipeline_actas,
   ]
 }
 
@@ -563,6 +590,7 @@ resource "google_cloud_scheduler_job" "dbt_pii_discovery" {
 
   depends_on = [
     google_project_service.cloudscheduler,
-    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker
+    google_cloud_run_v2_service_iam_member.pubsub_worker_invoker,
+    google_service_account_iam_member.terraform_deployer_data_pipeline_actas,
   ]
 }
